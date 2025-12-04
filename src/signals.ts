@@ -104,6 +104,10 @@ export function createSignal<T>(initial: T | T[]): Signal<T> | SignalArray<T> {
   return self;
 }
 
+  export function createSignalArray<T>(initial: T[] = []): SignalArray<T> {
+    return createSignal<T>(initial);
+  }
+
 export function effect(run: () => void | (() => void)): () => void {
   const comp: Computation = {
     active: true, links: new Map(), scheduled: false,

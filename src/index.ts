@@ -1,6 +1,6 @@
 // src/index.ts
 export { html, html as tsx, html as jsx, h, render, Repeat, destroyNode } from "./hyper";
-export { createSignal, effect, computed, memo } from "./signals";
+export { createSignal, createSignalArray, effect, computed, memo } from "./signals";
 export * from "./components";
 
 // Reexporte TIPOS num único lugar (DX + sem ciclos)
@@ -13,6 +13,5 @@ export type {
 } from "./types";
 
 export * from "./forms"
-
 
 

@@ -405,7 +405,12 @@ export const html: HTMTemplate = (htm as unknown as HTMModule).bind(h);
 
 type RootView = Child | (() => Child);
 
-export function render(view: RootView, container: Element): Node | Node[] {
+function assertContainer(el: Element | null | undefined): asserts el is Element {
+  if (!el) throw new Error("[slash] render() requires a container Element");
+}
+
+export function render(view: RootView, container: Element | null): Node | Node[] {
+  assertContainer(container);
   // cleanup de filhos anteriores
   const prevNodes = Array.from(container.childNodes) as Node[];
   for (const node of prevNodes) destroyNode(node);
