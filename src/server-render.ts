@@ -131,6 +131,12 @@ function propsToAttrs(props: Props | null): string {
 function childToString(child: Child): string {
   if (child == null || child === false) return "";
 
+  // Função: executar e processar resultado (para .map() e tracking automático)
+  if (typeof child === "function") {
+    const result = (child as () => unknown)();
+    return childToString(result as Child);
+  }
+
   // Signal: capturar e renderizar com marcadores
   if (isSignalLike(child)) {
     const id = captureSignal(child);
@@ -212,7 +218,7 @@ export function renderToString(view: Child | (() => Child)): {
   const resolved = typeof view === "function" ? view() : view;
 
   // Renderizar para string
-  const html = childToString(resolved);
+  const html = childToString(resolved as Child);
   const state = Object.fromEntries(signalRegistry);
 
   return { html, state };

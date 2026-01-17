@@ -25,6 +25,7 @@ export type Child =
   | null
   | undefined
   | ReadonlySignal<unknown>
+  | (() => unknown)  // Funções para tracking automático
   | Child[]
   | readonly Child[];
 

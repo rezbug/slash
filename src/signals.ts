@@ -88,15 +88,13 @@ export function createSignal<T>(initial: T | T[]): Signal<T> | SignalArray<T> {
 
     const listSelf = self as unknown as SignalArray<unknown>;
     listSelf.map = (render) => {
-      if (!LIST_RENDERER) {
-        throw new Error("[slash] list renderer not registered — ensure `hyper` is imported before using listSignal.map()");
-      }
+      // Nova implementação: retorna uma função para tracking automático
+      // Em vez de usar LIST_RENDERER (Repeat deprecated)
       const sigArr = self as unknown as Signal<unknown[]>;
-      return LIST_RENDERER(sigArr, keyOf as (x: unknown) => Key, (item) => {
-        const arr = sigArr.get();
-        const idx = arr.indexOf(item);
-        return render(item, idx);
-      });
+      return (() => {
+        const arr = sigArr.get(); // Tracking automático detecta esta dependência
+        return arr.map((item, idx) => render(item, idx));
+      }) as unknown as Node;
     };
     return listSelf as unknown as SignalArray<T>;
   }
