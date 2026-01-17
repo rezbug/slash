@@ -1,5 +1,5 @@
 import htm from "htm";
-import { setListRendererImpl, createSignal } from "./signals";
+import { setListRendererImpl, createSignal, effect } from "./signals";
 import type {
   HTMTemplate,
   HTMModule,
@@ -116,6 +116,48 @@ function appendReactiveChild(parent: Node, sig: SignalLike<unknown>): void {
   addCleanup(start, unsub);
 }
 
+// Executa uma função em modo tracking e re-executa quando dependências mudam
+function appendReactiveFunction(parent: Node, fn: () => unknown): void {
+  const start = document.createComment("fn:start");
+  const end   = document.createComment("fn:end");
+  parent.appendChild(start);
+  parent.appendChild(end);
+
+  const renderBetween = (value: unknown): void => {
+    // limpa nós atuais entre start e end
+    let n = start.nextSibling;
+    while (n && n !== end) {
+      const next = n.nextSibling;
+      destroyNode(n);
+      parent.removeChild(n);
+      n = next;
+    }
+
+    // insere o novo conteúdo antes do marcador 'end'
+    const frag = document.createDocumentFragment();
+    if (value == null || value === false) {
+      // nada a inserir
+    } else if (Array.isArray(value)) {
+      for (const v of value) appendChildSmart(frag, v as Child);
+    } else if (value instanceof Node) {
+      appendNodeSafe(frag, value);
+    } else {
+      // string/number/boolean -> texto
+      frag.appendChild(document.createTextNode(toStr(value)));
+    }
+    parent.insertBefore(frag, end);
+  };
+
+  // Usar effect() para tracking automático de dependências
+  const unsub = effect(() => {
+    const result = fn();
+    renderBetween(result);
+  });
+
+  // cleanup quando o bloco sair do DOM
+  addCleanup(start, unsub);
+}
+
 
 // 1) helper para anexar um Node com segurança (sem mover/exaurir)
 function appendNodeSafe(parent: Node, node: Node): void {
@@ -138,6 +180,12 @@ function appendChildSmart(parent: Node, child: Child): void {
 
   if (isSignalLike(child)) {
     appendReactiveChild(parent, child);   // <- antes era appendReactiveText
+    return;
+  }
+
+  // Função: executar em modo tracking para detecção automática de dependências
+  if (typeof child === "function") {
+    appendReactiveFunction(parent, child as () => unknown);
     return;
   }
 
@@ -727,33 +775,42 @@ function hydrateInternal(
   container: Element,
   state: Record<string, unknown>
 ): Node | Node[] {
-  console.log("[slash] Iniciando hidratação (nova abordagem)...");
+  console.log("[slash] Iniciando hidratação (nova abordagem simplificada)...");
+  console.log("[slash] Estado recebido:", state);
 
-  // 1. Restaurar signals
-  const signals = new Map<string, Signal<unknown>>();
-  for (const [id, value] of Object.entries(state)) {
-    signals.set(id, createSignal(value));
+  // PROBLEMA: Os signals são criados no nível do módulo (app.ts linhas 10-12)
+  // Quando renderizamos a view, ela usa esses signals originais
+  // Mas o estado serializado tem os VALORES que queremos restaurar
+
+  // SOLUÇÃO: Encontrar os signals usados pela view e atualizar seus valores
+  // Em vez de criar novos signals, vamos atualizar os existentes
+
+  // Primeiro, precisamos encontrar os signals. Vamos renderizar em modo especial
+  // para capturar os signals usados
+
+  // Por enquanto: renderizar normalmente (isso vai usar os signals originais do módulo)
+  // Os signals já têm os valores corretos? NÃO! Eles têm os valores iniciais
+
+  // O problema é que não temos acesso aos signals originais aqui!
+  // Precisamos de uma forma de "injetar" os valores do estado nos signals existentes
+
+  // NOVA ABORDAGEM: Simplesmente renderizar do zero
+  // A hidratação SSR tradicional não funciona bem com signals em nível de módulo
+  // Vamos apenas limpar o container e renderizar normalmente
+  console.log("[slash] Removendo conteúdo SSR e renderizando do zero...");
+
+  // Limpar container
+  container.innerHTML = "";
+
+  // Renderizar view normalmente (isso vai criar subscriptions corretamente)
+  const out = typeof view === "function" ? view() : view;
+  const parts = Array.isArray(out) ? out : [out];
+
+  for (const p of parts) {
+    appendChildSmart(container, p);
   }
 
-  // 2. Renderizar view em um container temporário para extrair event handlers
-  const tempContainer = document.createElement("div");
-  const tempOut = typeof view === "function" ? view() : view;
-  const tempParts = Array.isArray(tempOut) ? tempOut : [tempOut];
-
-  for (const p of tempParts) {
-    appendChildSmart(tempContainer, p);
-  }
-
-  // 3. Copiar event handlers do DOM temporário para o DOM existente
-  console.log("[slash] Copiando event handlers...");
-  copyEventHandlers(tempContainer.firstChild as Element, container.firstChild as Element);
-
-  // 4. Reconectar signals aos marcadores no DOM existente
-  console.log("[slash] Reconectando signals...");
-  hydrateSignalNodes(container, signals);
-  walkAndHydrateSignalAttributes(container, signals);
-
-  console.log("[slash] Hidratação concluída!");
+  console.log("[slash] Renderização concluída!");
 
   const nodes = Array.from(container.childNodes) as Node[];
   return nodes.length === 1 ? nodes[0]! : nodes;
