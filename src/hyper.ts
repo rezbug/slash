@@ -1,5 +1,5 @@
 import htm from "htm";
-import { setListRendererImpl } from "./signals";
+import { setListRendererImpl, createSignal } from "./signals";
 import type {
   HTMTemplate,
   HTMModule,
@@ -19,7 +19,20 @@ import type {
  * Tipos e utilitários
  * ----------------------------------------------------------- */
 
+type HydrateContext = {
+  cursor: Node | null;        // Ponteiro para nó atual do DOM
+  root: Element;              // Container raiz
+  signals: Map<string, Signal<unknown>>; // Signals restaurados
+};
 
+let hydrateContext: HydrateContext | null = null;
+
+// WeakMap para rastrear event handlers anexados aos elementos
+const elementEventHandlers = new WeakMap<Element, Map<string, EventListenerOrEventListenerObject>>();
+
+export function setHydrateContext(ctx: HydrateContext | null): void {
+  hydrateContext = ctx;
+}
 
 function isSignalLike(x: unknown): x is SignalLike {
   return (
@@ -293,6 +306,14 @@ function setProp(el: Elementish, key: string, val: unknown): void {
     if (parsed) {
       el.addEventListener(type, parsed.handler, parsed.options);
       addCleanup(el, () => el.removeEventListener(type, parsed.handler, parsed.options));
+
+      // Rastrear handler para hidratação
+      let handlers = elementEventHandlers.get(el);
+      if (!handlers) {
+        handlers = new Map();
+        elementEventHandlers.set(el, handlers);
+      }
+      handlers.set(type, parsed.handler);
     }
     return;
   }
@@ -349,6 +370,262 @@ function setProp(el: Elementish, key: string, val: unknown): void {
 }
 
 /* -------------------------------------------------------------
+ * Hidratação - Helpers
+ * ----------------------------------------------------------- */
+
+// Helper para processar valores de classe (copiado de hydrate.ts)
+function processClassValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).join(" ");
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([, on]) => Boolean(on))
+      .map(([k]) => k)
+      .join(" ");
+  }
+  return "";
+}
+
+// Hidratar atributos com signals (copiado de hydrate.ts)
+function hydrateSignalAttributes(
+  element: Element,
+  signals: Map<string, Signal<unknown>>
+): void {
+  const attrs = Array.from(element.attributes);
+
+  for (const attr of attrs) {
+    if (!attr.name.startsWith("data-signal-")) continue;
+
+    const prop = attr.name.replace("data-signal-", "");
+    const signalId = attr.value;
+    const signal = signals.get(signalId);
+
+    if (!signal) continue;
+
+    // Subscrever atualizações
+    const unsub = signal.subscribe((value) => {
+      if (prop === "value") {
+        (element as HTMLInputElement).value = String(value ?? "");
+      } else if (prop === "checked") {
+        (element as HTMLInputElement).checked = Boolean(value);
+      } else if (prop === "class") {
+        element.className = processClassValue(value);
+      } else {
+        element.setAttribute(prop, String(value ?? ""));
+      }
+    });
+
+    addCleanup(element, unsub);
+    element.removeAttribute(attr.name);
+  }
+}
+
+// Hidratar nós com signals interpolados (copiado de hydrate.ts)
+function hydrateSignalNodes(
+  container: Node,
+  signals: Map<string, Signal<unknown>>
+): void {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_COMMENT);
+
+  const signalNodes: Array<{
+    start: Comment;
+    end: Comment;
+    id: string;
+  }> = [];
+
+  let node: Comment | null;
+  while ((node = walker.nextNode() as Comment | null)) {
+    const match = node.textContent?.match(/^signal-start:(.+)$/);
+    if (match) {
+      const id = match[1];
+      let current: Node | null = node.nextSibling;
+
+      while (current) {
+        if (
+          current.nodeType === Node.COMMENT_NODE &&
+          (current as Comment).textContent === `signal-end:${id}`
+        ) {
+          signalNodes.push({ start: node, end: current as Comment, id });
+          break;
+        }
+        current = current.nextSibling;
+      }
+    }
+  }
+
+  // Hidratar cada signal
+  for (const { start, end, id } of signalNodes) {
+    const signal = signals.get(id);
+    if (!signal) continue;
+
+    const unsub = signal.subscribe((value) => {
+      // Limpar entre marcadores
+      let current = start.nextSibling;
+      while (current && current !== end) {
+        const next = current.nextSibling;
+        current.parentNode?.removeChild(current);
+        current = next;
+      }
+
+      // Inserir novo conteúdo
+      const parent = start.parentNode;
+      if (!parent) return;
+
+      if (value == null || value === false) {
+        // Nada
+      } else if (Array.isArray(value)) {
+        const frag = document.createDocumentFragment();
+        for (const item of value) {
+          if (item instanceof Node) {
+            frag.appendChild(item.cloneNode(true));
+          } else {
+            frag.appendChild(document.createTextNode(String(item ?? "")));
+          }
+        }
+        parent.insertBefore(frag, end);
+      } else if (value instanceof Node) {
+        parent.insertBefore(value.cloneNode(true), end);
+      } else {
+        parent.insertBefore(document.createTextNode(String(value)), end);
+      }
+    });
+
+    addCleanup(start, unsub);
+  }
+}
+
+// Caminhar DOM e hidratar (copiado de hydrate.ts)
+function walkAndHydrateSignalAttributes(
+  node: Node,
+  signals: Map<string, Signal<unknown>>
+): void {
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const element = node as Element;
+
+    hydrateSignalAttributes(element, signals);
+
+    for (const child of Array.from(element.childNodes)) {
+      walkAndHydrateSignalAttributes(child, signals);
+    }
+  }
+}
+
+function skipSignalMarkers(): void {
+  if (!hydrateContext) return;
+
+  let current = hydrateContext.cursor;
+  let depth = 0;
+
+  while (current) {
+    if (current.nodeType === Node.COMMENT_NODE) {
+      const text = (current as Comment).textContent;
+      if (text?.startsWith("signal-start:")) {
+        depth++;
+      } else if (text?.startsWith("signal-end:")) {
+        if (depth === 0) {
+          hydrateContext.cursor = current.nextSibling;
+          return;
+        }
+        depth--;
+      }
+    }
+    current = current.nextSibling;
+  }
+}
+
+function hydrateChild(child: Child): void {
+  if (!hydrateContext) return;
+
+  if (child == null || child === false) {
+    return;
+  }
+
+  if (Array.isArray(child)) {
+    for (const c of child) hydrateChild(c);
+    return;
+  }
+
+  if (isSignalLike(child)) {
+    // Signals interpolados: pular (marcadores já existem)
+    // Serão reconectados por hydrateSignalNodes()
+    skipSignalMarkers();
+    return;
+  }
+
+  if (child instanceof Node) {
+    // Já foi processado por h()
+    return;
+  }
+
+  // Texto: avançar cursor
+  if (hydrateContext.cursor?.nodeType === Node.TEXT_NODE) {
+    hydrateContext.cursor = hydrateContext.cursor.nextSibling;
+  }
+}
+
+function hHydrate(tag: unknown, props: Props, ...children: Child[]): Node {
+  if (!hydrateContext) throw new Error("[slash] hHydrate called without context");
+
+  console.log("[slash] hHydrate chamado com tag:", tag, "props:", props);
+
+  // Componentes: executar e continuar hidratação
+  if (typeof tag === "function") {
+    const out = (tag as (p: Record<string, unknown>) => Node | Child)({
+      ...(props || {}),
+      children,
+    });
+    return out instanceof Node ? out : document.createTextNode(String(out));
+  }
+
+  // Buscar elemento existente no cursor
+  const existingNode = hydrateContext.cursor;
+  console.log("[slash] Cursor atual:", existingNode?.nodeName);
+
+  if (!existingNode || existingNode.nodeType !== Node.ELEMENT_NODE) {
+    console.warn("[slash] Hydrate mismatch: expected element, creating new");
+    // Fallback: criar novo elemento
+    const savedCtx = hydrateContext;
+    hydrateContext = null;
+    const el = h(tag, props, ...children);
+    hydrateContext = savedCtx;
+    return el;
+  }
+
+  const el = existingNode as Element;
+
+  // Anexar APENAS event listeners (outros props já estão no HTML)
+  if (props) {
+    for (const [k, v] of Object.entries(props)) {
+      // Event handlers: anexar ao elemento existente
+      if (k.startsWith("on") && k[2] === k[2]?.toUpperCase()) {
+        console.log(`[slash] Anexando event handler ${k} ao elemento`, el.tagName);
+        setProp(el as Elementish, k, v);
+      }
+      // Signals em atributos: serão reconectados depois
+      // Outros atributos: já estão no HTML, pular
+    }
+  }
+
+  // Hidratar children recursivamente
+  const oldCursor = hydrateContext.cursor;
+  console.log("[slash] Movendo cursor para firstChild de", el.tagName);
+  hydrateContext.cursor = el.firstChild;
+
+  for (const child of children) {
+    console.log("[slash] Processando child:", child);
+    hydrateChild(child);
+  }
+
+  // Avançar cursor para próximo sibling
+  console.log("[slash] Avançando cursor de", el.tagName, "para nextSibling");
+  hydrateContext.cursor = oldCursor?.nextSibling || null;
+
+  return el;
+}
+
+/* -------------------------------------------------------------
  * h() + html (HTM)
  * ----------------------------------------------------------- */
 
@@ -372,6 +649,12 @@ const SVG_TAGS = new Set<string>([
 ]);
 
 export function h(tag: unknown, props: Props, ...children: Child[]): Node {
+  // MODO HYDRATE: Reutilizar DOM existente
+  if (hydrateContext) {
+    return hHydrate(tag, props, ...children);
+  }
+
+  // MODO NORMAL: Criar elementos novos
   // Componente (função) — pode retornar qualquer Child; empacotar se não for Node
   if (typeof tag === "function") {
     const out = (tag as (p: Record<string, unknown>) => Node | Child)({
@@ -404,25 +687,132 @@ export const html: HTMTemplate = (htm as unknown as HTMModule).bind(h);
  * ----------------------------------------------------------- */
 
 type RootView = Child | (() => Child);
+type RenderContainer = Element | string | null | undefined;
+const isDev =
+  typeof process !== "undefined" && process?.env?.NODE_ENV !== "production";
 
-function assertContainer(el: Element | null | undefined): asserts el is Element {
-  if (!el) throw new Error("[slash] render() requires a container Element");
+function callerInfo(): string | undefined {
+  try {
+    const stack = new Error().stack?.split("\n").slice(3);
+    if (!stack?.length) return undefined;
+    const frame = stack.find((line) => /\.(ts|tsx|js)/.test(line));
+    if (!frame) return undefined;
+    const match = frame.match(/at\s+(?:.*\()?([^():]+):(\d+):\d+\)?/);
+    if (!match) return undefined;
+    return `${match[1]}:${match[2]}`;
+  } catch {
+    return undefined;
+  }
 }
 
-export function render(view: RootView, container: Element | null): Node | Node[] {
-  assertContainer(container);
-  // cleanup de filhos anteriores
-  const prevNodes = Array.from(container.childNodes) as Node[];
+function resolveContainer(target: RenderContainer): Element {
+  if (typeof target === "string") {
+    const el = document.querySelector(target);
+    if (!el) {
+      const hint = isDev ? callerInfo() : undefined;
+      const extra = hint ? ` (called from ${hint})` : "";
+      throw new Error(`[slash] render(): selector \"${target}\" not found — ensure the element exists before calling render()${extra}`);
+    }
+    return el;
+  }
+  if (target instanceof Element) return target;
+  const hint = isDev ? callerInfo() : undefined;
+  const extra = hint ? ` (called from ${hint})` : "";
+  throw new Error(`[slash] render(): container Element is required (received null/undefined)${extra}`);
+}
+
+// Função interna de hydrate
+function hydrateInternal(
+  view: RootView,
+  container: Element,
+  state: Record<string, unknown>
+): Node | Node[] {
+  console.log("[slash] Iniciando hidratação (nova abordagem)...");
+
+  // 1. Restaurar signals
+  const signals = new Map<string, Signal<unknown>>();
+  for (const [id, value] of Object.entries(state)) {
+    signals.set(id, createSignal(value));
+  }
+
+  // 2. Renderizar view em um container temporário para extrair event handlers
+  const tempContainer = document.createElement("div");
+  const tempOut = typeof view === "function" ? view() : view;
+  const tempParts = Array.isArray(tempOut) ? tempOut : [tempOut];
+
+  for (const p of tempParts) {
+    appendChildSmart(tempContainer, p);
+  }
+
+  // 3. Copiar event handlers do DOM temporário para o DOM existente
+  console.log("[slash] Copiando event handlers...");
+  copyEventHandlers(tempContainer.firstChild as Element, container.firstChild as Element);
+
+  // 4. Reconectar signals aos marcadores no DOM existente
+  console.log("[slash] Reconectando signals...");
+  hydrateSignalNodes(container, signals);
+  walkAndHydrateSignalAttributes(container, signals);
+
+  console.log("[slash] Hidratação concluída!");
+
+  const nodes = Array.from(container.childNodes) as Node[];
+  return nodes.length === 1 ? nodes[0]! : nodes;
+}
+
+// Copia event handlers de source para target recursivamente
+function copyEventHandlers(source: Element | null, target: Element | null): void {
+  if (!source || !target) return;
+
+  // Pegar todos os event listeners anexados ao source
+  const handlers = elementEventHandlers.get(source);
+  if (handlers) {
+    for (const [eventType, handler] of handlers) {
+      console.log(`[slash] Copiando event listener ${eventType} para`, target.tagName);
+      target.addEventListener(eventType, handler);
+      // Adicionar cleanup ao target também
+      addCleanup(target, () => target.removeEventListener(eventType, handler));
+    }
+  }
+
+  // Recursivamente copiar para children
+  const sourceChildren = Array.from(source.children);
+  const targetChildren = Array.from(target.children);
+
+  for (let i = 0; i < Math.min(sourceChildren.length, targetChildren.length); i++) {
+    copyEventHandlers(sourceChildren[i] as Element, targetChildren[i] as Element);
+  }
+}
+
+export function render(view: RootView, container: RenderContainer): Node | Node[] {
+  const resolved = resolveContainer(container);
+
+  // DETECÇÃO AUTOMÁTICA DE MODO
+
+  // Modo Hydrate: container tem conteúdo + script de estado
+  const stateScript = typeof document !== "undefined"
+    ? document.getElementById("__SLASH_STATE__")
+    : null;
+
+  if (resolved.childNodes.length > 0 && stateScript) {
+    // MODO HYDRATE
+    console.log("[slash] Iniciando hidratação...");
+    const state = JSON.parse(stateScript.textContent || "{}");
+    stateScript.remove();
+    return hydrateInternal(view, resolved, state);
+  }
+
+  // Modo Normal: limpar e renderizar
+  const prevNodes = Array.from(resolved.childNodes) as Node[];
   for (const node of prevNodes) destroyNode(node);
-  container.textContent = "";
+  resolved.textContent = "";
 
   // resolve view
   const out = typeof view === "function" ? (view as () => Child)() : view;
   const parts = Array.isArray(out) ? out : [out];
 
-  for (const p of parts) appendChildSmart(container, p);
+  for (const p of parts) appendChildSmart(resolved, p);
 
-  const inserted = Array.from(container.childNodes) as Node[];
+  const inserted = Array.from(resolved.childNodes) as Node[];
   return inserted.length === 1 ? inserted[0]! : inserted;
 }
 

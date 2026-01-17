@@ -3,6 +3,10 @@ export { html, html as tsx, html as jsx, h, render, Repeat, destroyNode } from "
 export { createSignal, createSignalArray, effect, computed, memo } from "./signals";
 export * from "./components";
 
+// SSR exports
+export { renderToString, htmlString } from "./server-render";
+export { hydrate } from "./hydrate";
+
 // Reexporte TIPOS num único lugar (DX + sem ciclos)
 export type {
   Key, Elementish, Child, Props,
