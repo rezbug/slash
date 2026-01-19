@@ -1,15 +1,27 @@
 // src/server-render.ts
 import htm from "htm";
-import type { Child, Props, SignalLike } from "./types";
+import type { Child, Props, Reactive } from "./types";
 
-// Registry de signals para serialização
+// Registry de reactive objects para serialização
 const signalRegistry = new Map<string, unknown>();
 let signalCounter = 0;
 
 // Void elements que não têm tag de fechamento
 const VOID_ELEMENTS = new Set([
-  "area", "base", "br", "col", "embed", "hr", "img", "input",
-  "link", "meta", "param", "source", "track", "wbr",
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
 ]);
 
 // Helpers
@@ -22,7 +34,7 @@ function escapeHtml(unsafe: string): string {
     .replace(/'/g, "&#039;");
 }
 
-function isSignalLike(x: unknown): x is SignalLike {
+function isReactive(x: unknown): x is Reactive {
   return (
     !!x &&
     typeof (x as Record<string, unknown>).get === "function" &&
@@ -30,7 +42,7 @@ function isSignalLike(x: unknown): x is SignalLike {
   );
 }
 
-function captureSignal(signal: SignalLike): string {
+function captureSignal(signal: Reactive): string {
   const id = `s${signalCounter++}`;
   signalRegistry.set(id, signal.get());
   return id;
@@ -69,22 +81,22 @@ function propsToAttrs(props: Props | null): string {
     }
 
     // Signals: capturar valor + marcar para hidratação
-    if (isSignalLike(val)) {
+    if (isReactive(val)) {
       const id = captureSignal(val);
       const value = val.get();
 
       if (key === "class" || key === "className") {
         const className = processClass(value);
         if (className) {
-          result += ` class="${escapeHtml(className)}" data-signal-class="${id}"`;
+          result += ` class="${escapeHtml(className)}" data-reactive-class="${id}"`;
         }
       } else if (key === "value") {
-        result += ` value="${escapeHtml(String(value ?? ""))}" data-signal-value="${id}"`;
+        result += ` value="${escapeHtml(String(value ?? ""))}" data-reactive-value="${id}"`;
       } else if (key === "checked") {
         if (value) result += " checked";
-        result += ` data-signal-checked="${id}"`;
+        result += ` data-reactive-checked="${id}"`;
       } else {
-        result += ` ${key}="${escapeHtml(String(value))}" data-signal-${key}="${id}"`;
+        result += ` ${key}="${escapeHtml(String(value))}" data-reactive-${key}="${id}"`;
       }
       continue;
     }
@@ -138,15 +150,15 @@ function childToString(child: Child): string {
   }
 
   // Signal: capturar e renderizar com marcadores
-  if (isSignalLike(child)) {
+  if (isReactive(child)) {
     const id = captureSignal(child);
     const value = child.get();
 
     if (Array.isArray(value)) {
-      return `<!--signal-start:${id}-->${value.map(childToString).join("")}<!--signal-end:${id}-->`;
+      return `<!--reactive-start:${id}-->${value.map(childToString).join("")}<!--reactive-end:${id}-->`;
     }
 
-    return `<!--signal-start:${id}-->${escapeHtml(String(value ?? ""))}<!--signal-end:${id}-->`;
+    return `<!--reactive-start:${id}-->${escapeHtml(String(value ?? ""))}<!--reactive-end:${id}-->`;
   }
 
   // Array
@@ -161,7 +173,9 @@ function childToString(child: Child): string {
 
   // Node ou outros objetos (não devem acontecer no SSR)
   if (typeof child === "object") {
-    console.warn("[slash] SSR: Unexpected object in child position. Use htmlString instead of html.");
+    console.warn(
+      "[slash] SSR: Unexpected object in child position. Use htmlString instead of html.",
+    );
     return "[Object]";
   }
 
@@ -170,11 +184,7 @@ function childToString(child: Child): string {
 }
 
 // h() versão string (chamado pelo HTM)
-export function hString(
-  tag: unknown,
-  props: Props | null,
-  ...children: Child[]
-): string {
+export function hString(tag: unknown, props: Props | null, ...children: Child[]): string {
   // Componente função
   if (typeof tag === "function") {
     const result = (tag as (p: Record<string, unknown>) => Child | string)({
@@ -222,4 +232,49 @@ export function renderToString(view: Child | (() => Child)): {
   const state = Object.fromEntries(signalRegistry);
 
   return { html, state };
+}
+
+// Streaming SSR: renderiza para ReadableStream
+export async function* renderToStream(
+  view: Child | (() => Child),
+): AsyncGenerator<string, void, unknown> {
+  // Reset do registry
+  signalRegistry.clear();
+  signalCounter = 0;
+
+  // Resolver view
+  const resolved = typeof view === "function" ? view() : view;
+
+  // Renderizar para string em chunks
+  const html = childToString(resolved as Child);
+
+  // Yield HTML em chunks de 16KB para melhor performance
+  const chunkSize = 16384;
+  for (let i = 0; i < html.length; i += chunkSize) {
+    yield html.slice(i, i + chunkSize);
+  }
+
+  // Yield estado serializado no final
+  const state = Object.fromEntries(signalRegistry);
+  yield `<script id="__SLASH_STATE__" type="application/json">${JSON.stringify(state)}</script>`;
+}
+
+// Repeat para SSR: renderiza lista reativa como string
+export function Repeat<T>(
+  listSig: Reactive<T[]>,
+  keyOf: (item: T) => string | number,
+  renderItem: (item: T) => Child,
+): string {
+  const id = captureSignal(listSig);
+  const items = listSig.get();
+
+  const html = items
+    .map((item) => {
+      const key = keyOf(item);
+      const itemHtml = childToString(renderItem(item));
+      return `<!--repeat-item:${id}:${key}-->${itemHtml}<!--/repeat-item-->`;
+    })
+    .join("");
+
+  return `<!--repeat-start:${id}-->${html}<!--repeat-end:${id}-->`;
 }

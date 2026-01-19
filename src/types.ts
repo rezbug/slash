@@ -3,19 +3,19 @@ export type Key = string | number | symbol;
 
 export type Elementish = HTMLElement | SVGElement;
 
-export type Signal<T> = {
+// State API (nova API reativa)
+export type State<T> = {
   get(): T;
-  set(v: T | ((prev: T) => T)): void;
+  set(payload: T | ((prev: T) => T)): void;
+  watch(callback: (payload: T) => void): () => void;
   subscribe(fn: (v: T) => void): () => void;
 };
 
-export interface SignalArray<T> extends Signal<T[]> {
-  map(render: Renderer<T>): Node; // “map reativo” (Repeat por baixo)
-}
-
-export type ReadonlySignal<T> = Pick<Signal<T>, "get" | "subscribe">;
-export type ReadonlySignalArray<T> = Pick<SignalArray<T>, "get" | "subscribe" | "map">;
-export type SignalLike<T = unknown> = ReadonlySignal<T> | Signal<T>;
+// Reactive (duck type para objetos reativos - renomeado de SignalLike)
+export type Reactive<T = unknown> = {
+  get(): T;
+  subscribe(fn: (v: T) => void): () => void;
+};
 
 export type Child =
   | Node
@@ -24,8 +24,8 @@ export type Child =
   | boolean
   | null
   | undefined
-  | ReadonlySignal<unknown>
-  | (() => unknown)  // Funções para tracking automático
+  | Reactive<unknown>
+  | (() => unknown) // Funções para tracking automático
   | Child[]
   | readonly Child[];
 
@@ -40,15 +40,36 @@ export type Renderer<T> = (item: T, index: number) => Child;
 // HTM
 export type HTMTemplate = (strings: TemplateStringsArray, ...values: unknown[]) => Child;
 export type HTMModule = {
-  bind(
-    h: (tag: unknown, props: Props, ...children: Child[]) => Node
-  ): HTMTemplate;
+  bind(h: (tag: unknown, props: Props, ...children: Child[]) => Node): HTMTemplate;
 };
 
 // Abstração para renderer de listas (injeção)
 export type ListRenderer = <T>(
-  list: ReadonlySignal<T[]>,
+  list: Reactive<T[]>,
   keyOf: (item: T) => Key,
-  render: (item: T) => Child
+  render: (item: T) => Child,
 ) => Node;
 
+// Universal Rendering Types
+export type RenderMode = "client" | "server" | "hydrate";
+
+export type UniversalRenderOptions = {
+  mode?: RenderMode;
+  state?: Record<string, unknown>;
+};
+
+export type StreamChunk = string;
+
+export type LoaderContext = {
+  params: Record<string, string>;
+  request?: Request;
+  isServer: boolean;
+};
+
+export type LoaderFunction<T = unknown> = (ctx: LoaderContext) => T | Promise<T>;
+
+export type ErrorBoundaryProps = {
+  fallback: (error: Error) => Child;
+  onError?: (error: Error, errorInfo: { componentStack?: string }) => void;
+  children: Child;
+};

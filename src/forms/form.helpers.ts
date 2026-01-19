@@ -1,51 +1,94 @@
 // packages/slash/src/forms/form.helpers.ts
-import { computed } from "../signals";
-import type { ReadonlySignal, Signal } from "../types";
+import type { Reactive, State } from "../types";
 import type {
-  FormEvent,
-  TextFieldEvent, TextFieldElement,
-  CheckboxEvent,  CheckboxElement,
-  RadioEvent,     RadioElement,
-  SelectEvent,    SelectElement,
   ButtonEvent,
-  FormSubmitEvent,
+  CheckboxElement,
+  CheckboxEvent,
   FormElement,
-  TextFieldControlMode
+  FormEvent,
+  FormSubmitEvent,
+  RadioElement,
+  RadioEvent,
+  SelectElement,
+  SelectEvent,
+  TextFieldControlMode,
+  TextFieldElement,
+  TextFieldEvent,
 } from "./form.types";
 
 /* ----------------------------------------------------------------------------
  * Two-way bindings (models)
  * -------------------------------------------------------------------------- */
 
-/** Text input / textarea */
-export function textFieldControl(sig: Signal<string>, mode: TextFieldControlMode = "input") {
-  const base = { value: sig } as Record<string, unknown>;
+/** Text input / textarea
+ * @param state - Pass createState({ value: string })
+ */
+export function textFieldControl<T extends { value: string }>(
+  state: State<T>,
+  mode: TextFieldControlMode = "input",
+) {
+  // Criar Reactive a partir de state.value (tipo inferido como Reactive<string>)
+  const valueReactive: Reactive<string> = {
+    get: () => state.get().value,
+    subscribe: (fn: (v: string) => void) => state.subscribe((s) => fn(s.value)),
+  };
+
+  const base = { value: valueReactive } as Record<string, unknown>;
+
+  const setValue = (newValue: string) => {
+    const current = state.get();
+    state.set({ ...current, value: newValue } as T);
+  };
+
   if (mode === "input" || mode === "both") {
-    base.onInput = (e: TextFieldEvent<InputEvent>) => sig.set(e.target.value);
+    base.onInput = (e: TextFieldEvent<InputEvent>) => setValue(e.target.value);
   }
   if (mode === "change" || mode === "both") {
-    base.onChange = (e: TextFieldEvent<Event>) => sig.set(e.target.value);
+    base.onChange = (e: TextFieldEvent<Event>) => setValue(e.target.value);
   }
   return base;
 }
 
 /** Checkbox (boolean) */
-export function checkboxControl(sig: Signal<boolean>) {
+export function checkboxControl<T extends { value: boolean }>(state: State<T>) {
+  const valueReactive: Reactive<boolean> = {
+    get: () => state.get().value,
+    subscribe: (fn: (v: boolean) => void) => state.subscribe((s) => fn(s.value)),
+  };
+
+  const setValue = (newValue: boolean) => {
+    const current = state.get();
+    state.set({ ...current, value: newValue } as T);
+  };
+
   return {
-    checked: sig,
+    checked: valueReactive,
     onChange: (e: CheckboxEvent<Event>) => {
-      sig.set((e.target as CheckboxElement).checked);
+      setValue((e.target as CheckboxElement).checked);
     },
   };
 }
 
 /** Radio group (valor selecionado). Passe o value desta opção. */
-export function radioControl(groupValue: Signal<string>, value: string) {
+export function radioControl<T extends { value: string }>(state: State<T>, value: string) {
+  // Criar um Reactive<boolean> derivado manualmente
+  const checkedReactive: Reactive<boolean> = {
+    get: () => state.get().value === value,
+    subscribe: (fn: (v: boolean) => void) => {
+      return state.subscribe((s) => fn(s.value === value));
+    },
+  };
+
+  const setValue = (newValue: string) => {
+    const current = state.get();
+    state.set({ ...current, value: newValue } as T);
+  };
+
   return {
-    checked: computed<boolean>(() => groupValue.get() === value) as ReadonlySignal<boolean>,
+    checked: checkedReactive,
     onChange: (e: RadioEvent<Event>) => {
       if ((e.target as RadioElement).checked) {
-        groupValue.set(value);
+        setValue(value);
       }
     },
     value,
@@ -53,14 +96,24 @@ export function radioControl(groupValue: Signal<string>, value: string) {
 }
 
 /** Select (single) */
-export function SelectControl(sig: Signal<string>) {
+export function SelectControl<T extends { value: string }>(state: State<T>) {
+  const valueReactive: Reactive<string> = {
+    get: () => state.get().value,
+    subscribe: (fn: (v: string) => void) => state.subscribe((s) => fn(s.value)),
+  };
+
+  const setValue = (newValue: string) => {
+    const current = state.get();
+    state.set({ ...current, value: newValue } as T);
+  };
+
   return {
-    value: sig,
+    value: valueReactive,
     onChange: (e: SelectEvent<Event>) => {
-      sig.set((e.target as SelectElement).value);
+      setValue((e.target as SelectElement).value);
     },
     onInput: (e: SelectEvent<InputEvent>) => {
-      sig.set((e.target as SelectElement).value);
+      setValue((e.target as SelectElement).value);
     },
   };
 }
@@ -94,7 +147,7 @@ export function delegate<El extends Element, Evt extends Event = Event>(
   type: string,
   selector: string,
   handler: (e: FormEvent<El, Evt>) => void,
-  options?: boolean | AddEventListenerOptions
+  options?: boolean | AddEventListenerOptions,
 ): () => void {
   const listener = (ev: Event) => {
     const start = ev.target as Element | null;
@@ -102,13 +155,14 @@ export function delegate<El extends Element, Evt extends Event = Event>(
     const target = start.closest(selector) as El | null;
     if (!target || !root.contains(target)) return;
 
-    // “Projeta” o evento original com target tipado
-    const wrapped = Object.assign(Object.create(Object.getPrototypeOf(ev)), ev, {
-      target,
-      currentTarget: target,
-    }) as FormEvent<El, Evt>;
+    // "Projeta" o evento original com target tipado
+    const wrapped = Object.create(Object.getPrototypeOf(ev), {
+      target: { value: target, writable: false, enumerable: true, configurable: true },
+      currentTarget: { value: target, writable: false, enumerable: true, configurable: true },
+    });
+    Object.setPrototypeOf(wrapped, ev);
 
-    handler(wrapped);
+    handler(wrapped as FormEvent<El, Evt>);
   };
 
   root.addEventListener(type, listener as EventListener, options);
@@ -121,7 +175,7 @@ export function delegate<El extends Element, Evt extends Event = Event>(
 
 /** Converte um <form> em objeto plano. Campos duplicados viram arrays (sem undefined). */
 export function formToObject(
-  form: FormElement
+  form: FormElement,
 ): Record<string, FormDataEntryValue | FormDataEntryValue[]> {
   const fd = new FormData(form);
   const out: Record<string, FormDataEntryValue | FormDataEntryValue[]> = {};
@@ -147,7 +201,7 @@ export function formToObject(
  *   html`<form onSubmit=${onSubmit((data) => { ... })}>...</form>`
  */
 export function onSubmit(
-  cb: (data: Record<string, FormDataEntryValue | FormDataEntryValue[]>, e: FormSubmitEvent) => void
+  cb: (data: Record<string, FormDataEntryValue | FormDataEntryValue[]>, e: FormSubmitEvent) => void,
 ) {
   return (e: FormSubmitEvent) => {
     e.preventDefault();
@@ -166,4 +220,3 @@ export function onReset(handler: (e: FormEvent<FormElement, Event>) => void) {
 export function onButtonClick(handler: (e: ButtonEvent<MouseEvent>) => void) {
   return (e: ButtonEvent<MouseEvent>) => handler(e);
 }
-

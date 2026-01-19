@@ -6,6 +6,18 @@ out
 dist
 *.tgz
 
+# build artifacts in source
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+!src/**/*.test.ts
+!src/**/*.spec.ts
+
+# backup files
+*.backup
+*.bak
+*~
+
 # code coverage
 coverage
 *.lcov

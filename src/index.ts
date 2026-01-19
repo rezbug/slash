@@ -1,21 +1,68 @@
 // src/index.ts
-export { html, html as tsx, html as jsx, h, render, Repeat, destroyNode } from "./hyper";
-export { createSignal, createSignalArray, effect, computed, memo } from "./signals";
-export * from "./components";
 
+export * from "./components";
+export {
+  ErrorBoundary,
+  safeRender,
+  setupGlobalErrorHandler,
+  useSafeAsync,
+} from "./error-boundary";
+export * from "./forms";
+export { destroyNode, h, html, html as tsx, html as jsx, Repeat, render } from "./hyper";
+export { mapReactive } from "./utils/helpers";
+export type {
+  LinkProps,
+  NavigateOptions,
+  ParseParams,
+  RouteMatch,
+  RoutePattern,
+  RouteProps,
+  RouterProps,
+  RouterState,
+} from "./router";
+// Router exports
+export {
+  Link,
+  matchRoute,
+  parseParams,
+  parseQuery,
+  Route,
+  Router,
+  rankRoutes,
+  router,
+  stringifyQuery,
+} from "./router";
 // SSR exports
-export { renderToString, htmlString } from "./server-render";
-export { hydrate } from "./hydrate";
+export { htmlString, renderToStream, renderToString, Repeat as RepeatString } from "./server-render";
+export { createState } from "./state";
 
 // Reexporte TIPOS num único lugar (DX + sem ciclos)
 export type {
-  Key, Elementish, Child, Props,
-  EventOptions, EventHandler, EventTuple,
-  HTMTemplate, HTMModule,
-  Signal, ReadonlySignal, SignalArray, ReadonlySignalArray,
-  Renderer
+  Child,
+  Elementish,
+  ErrorBoundaryProps,
+  EventHandler,
+  EventOptions,
+  EventTuple,
+  HTMModule,
+  HTMTemplate,
+  Key,
+  LoaderContext,
+  LoaderFunction,
+  Props,
+  Reactive,
+  Renderer,
+  RenderMode,
+  State,
+  StreamChunk,
+  UniversalRenderOptions,
 } from "./types";
-
-export * from "./forms"
-
-
+// Universal rendering exports
+export {
+  createLoader,
+  deserializeLoaderData,
+  hydrateLoaderCache,
+  invalidateLoader,
+  isServer,
+  serializeLoaderData,
+} from "./universal-loader";
