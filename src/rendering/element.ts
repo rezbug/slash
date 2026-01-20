@@ -4,20 +4,27 @@ import type { Child, Elementish, Props } from "../types";
 import { SVG_NS, SVG_TAGS } from "../utils/constants";
 import { appendChildSmart } from "./children";
 import { setProp } from "./props";
+import {
+  createStateTracker,
+  startTracking,
+  stopTracking,
+  trackState,
+  clearTrackedStates,
+  hasTrackedStates,
+  getTrackedStates,
+  type StateTracker,
+} from "./element-core";
 
 export function h(tag: unknown, props: Props, ...children: Child[]): Node {
   // Componente (função) — pode retornar qualquer Child; empacotar se não for Node
   if (typeof tag === "function") {
-    // Rastrear states acessados durante renderização
-    const accessedStates = new Set<StateManager<any>>();
-    let isTracking = true;
+    // Rastrear states acessados durante renderização usando Functional Core
+    let tracker = createStateTracker();
 
     // Registrar função de rastreamento global
     const originalTracker = (globalThis as any).__SLASH_TRACK_STATE__;
     (globalThis as any).__SLASH_TRACK_STATE__ = (state: StateManager<any>) => {
-      if (isTracking) {
-        accessedStates.add(state);
-      }
+      tracker = trackState(tracker, state);
     };
 
     // Criar anchor para marcar posição do componente
@@ -29,6 +36,9 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
     // Lista de nodes renderizados (para cleanup)
     let renderedNodes: Node[] = [];
+
+    // Lista de unwatchers (para cleanup)
+    let unwatchers: Array<() => void> = [];
 
     // Função de renderização
     const render = () => {
@@ -42,8 +52,8 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
       renderedNodes = [];
 
       // Resetar tracking para nova renderização
-      accessedStates.clear();
-      isTracking = true;
+      tracker = clearTrackedStates(tracker);
+      tracker = startTracking(tracker);
 
       try {
         // Executar componente
@@ -53,7 +63,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
         });
 
         // Parar tracking após execução
-        isTracking = false;
+        tracker = stopTracking(tracker);
 
         // Renderizar resultado
         const frag = document.createDocumentFragment();
@@ -74,7 +84,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
         }
       } finally {
         // Parar tracking em caso de erro
-        isTracking = false;
+        tracker = stopTracking(tracker);
       }
     };
 
@@ -85,7 +95,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
     (globalThis as any).__SLASH_TRACK_STATE__ = originalTracker;
 
     // Se não há states acessados, retornar node diretamente (retrocompatibilidade)
-    if (accessedStates.size === 0) {
+    if (!hasTrackedStates(tracker)) {
       // Componente estático - retornar resultado direto se for Element
       if (
         renderedNodes.length === 1 &&
@@ -107,9 +117,9 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
       wrapper.appendChild(node);
     }
 
-    // Registrar watchers nos states acessados e armazenar unwatchers
-    const unwatchers: Array<() => void> = [];
-    for (const state of accessedStates) {
+    // Registrar watchers nos states acessados
+    const trackedStates = getTrackedStates(tracker);
+    for (const state of trackedStates) {
       const unwatch = state.watch(() => {
         if (anchor.parentNode) {
           // Apenas re-renderizar se ainda estiver no DOM
@@ -121,12 +131,13 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
     // Cleanup ao remover do DOM
     addCleanup(anchor, () => {
-      isTracking = false;
-      accessedStates.clear();
+      tracker = stopTracking(tracker);
+      tracker = clearTrackedStates(tracker);
       // Chamar unwatchers
       for (const unwatch of unwatchers) {
         unwatch();
       }
+      unwatchers = [];
       // Limpar nodes renderizados
       for (const node of renderedNodes) {
         destroyNode(node);

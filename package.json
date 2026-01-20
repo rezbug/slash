@@ -18,20 +18,13 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs",
       "default": "./dist/index.mjs"
-    },
-    "./router": {
-      "bun": "./src/router/index.ts",
-      "types": "./dist/types/router/index.d.ts",
-      "import": "./dist/router/index.mjs",
-      "require": "./dist/router/index.cjs",
-      "default": "./dist/router/index.mjs"
     }
   },
   "scripts": {
     "clean": "rm -rf ./dist",
     "build:types": "tsc -p ./tsconfig.json",
-    "build:esm": "FORMAT=esm NODE_ENV=production bun run scripts/build.ts && FORMAT=esm NODE_ENV=production bun run scripts/build-router.ts",
-    "build:cjs": "FORMAT=cjs NODE_ENV=production bun run scripts/build.ts && FORMAT=cjs NODE_ENV=production bun run scripts/build-router.ts",
+    "build:esm": "FORMAT=esm NODE_ENV=production bun run scripts/build.ts",
+    "build:cjs": "FORMAT=cjs NODE_ENV=production bun run scripts/build.ts",
     "build": "bun run clean && bun run build:esm && bun run build:cjs",
     "dev:bundle": "FORMAT=esm NODE_ENV=development bun run scripts/build.ts --watch",
     "dev:types": "tsc -w -p ./tsconfig.json --preserveWatchOutput",

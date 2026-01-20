@@ -125,7 +125,7 @@ export function createTrackedState<T>(initialState: T): StateManager<T> & {
     },
 
     set(payload: T): void {
-      Object.assign(state._state, JSON.parse(JSON.stringify(payload)));
+      Object.assign(state._state as object, JSON.parse(JSON.stringify(payload)));
       const current = JSON.parse(JSON.stringify(state._state));
 
       // Notificar todos os watchers
@@ -134,8 +134,11 @@ export function createTrackedState<T>(initialState: T): StateManager<T> & {
       }
     },
 
-    watch(callback: (payload: T) => void): void {
+    watch(callback: (payload: T) => void): () => void {
       state._watchers.add(callback);
+      return () => {
+        state._watchers.delete(callback);
+      };
     },
   };
 

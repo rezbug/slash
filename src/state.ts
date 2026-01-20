@@ -1,3 +1,22 @@
+/**
+ * State Management - FCIS Pattern (Functional Core, Imperative Shell)
+ *
+ * Arquitetura:
+ * - state-core.ts: Functional Core (funções puras, decisões)
+ * - state.ts: Imperative Shell (side effects, execução)
+ * - state-history.ts: Time-travel debugging (opcional)
+ */
+
+import {
+  deepClone,
+  computeStateUpdate,
+  applyStateCommand,
+  shouldNotifyWatchers
+} from './state-core'
+import type { StateHistory } from './state-history'
+import { createHistory, addToHistory, clearHistory as clearHistoryCore } from './state-history'
+import { isInBatch, __recordBatchUpdate, __addBatchEndCallback } from './batch'
+
 export type State<T = unknown> = object & T;
 
 export type StateWatcher<T> = (params: T) => void;
@@ -6,62 +25,82 @@ export type StateManager<T = unknown> = {
   set: (value: State<T>) => void;
   get: () => State<T>;
   watch: (callback: StateWatcher<T>) => () => void;
+  // Time-travel debugging (opcional, não-breaking)
+  getHistory?: () => Readonly<StateHistory<T>>;
+  clearHistory?: () => void;
 };
 
-// Clone profundo que preserva instâncias especiais (Error, Date, etc)
-function deepClone<T>(obj: T): T {
-  // Primitivos e null
-  if (obj === null || typeof obj !== 'object') {
-    return obj;
-  }
-
-  // Error objects - preservar sem clonar
-  if (obj instanceof Error) {
-    return obj;
-  }
-
-  // Date objects - criar nova instância
-  if (obj instanceof Date) {
-    return new Date(obj.getTime()) as T;
-  }
-
-  // Arrays
-  if (Array.isArray(obj)) {
-    return obj.map(item => deepClone(item)) as T;
-  }
-
-  // Objects
-  const cloned: any = {};
-  for (const key in obj) {
-    if (obj.hasOwnProperty(key)) {
-      cloned[key] = deepClone(obj[key]);
-    }
-  }
-  return cloned;
+export interface StateOptions {
+  /** Habilita time-travel debugging (histórico de comandos) */
+  enableHistory?: boolean;
+  /** Tamanho máximo do histórico (padrão: 100) */
+  historyMaxSize?: number;
 }
 
+/**
+ * IMPERATIVE SHELL: Gerencia side effects e mutações
+ */
 export const createState = <S = unknown>(
   initialState: State<S>,
+  options?: StateOptions
 ): StateManager<S> => {
-  const _state = deepClone(initialState);
+  // Estado interno mutável (encapsulado)
+  let _state = deepClone(initialState);
   const _watchers = new Set<StateWatcher<S>>();
 
+  // Histórico opcional (time-travel debugging)
+  let _history: StateHistory<S> | null = options?.enableHistory
+    ? createHistory(options.historyMaxSize ?? 100)
+    : null;
+
+  /**
+   * Side effect: Notifica todos os watchers
+   */
   const _notifyHandlers = (payload: State<S>) => {
     for (const stateWatcher of _watchers) {
       stateWatcher(payload);
     }
   };
 
+  /**
+   * SHELL: Orquestra functional core + side effects
+   */
   const set = (payload: State<S>) => {
-    Object.assign(_state, deepClone(payload));
-    _notifyHandlers(deepClone(_state));
+    // 1. FUNCTIONAL CORE: Computar comando (puro)
+    const command = computeStateUpdate(_state, payload);
+
+    // 2. FUNCTIONAL CORE: Aplicar comando (puro)
+    const newState = applyStateCommand(_state, command);
+
+    // 3. IMPERATIVE SHELL: Mutação do estado interno
+    _state = newState;
+
+    // 4. IMPERATIVE SHELL: Adicionar ao histórico (se habilitado)
+    if (_history !== null) {
+      _history = addToHistory(_history, command, deepClone(_state));
+    }
+
+    // 5. FUNCTIONAL CORE: Decidir se deve notificar (puro)
+    if (shouldNotifyWatchers(command)) {
+      // 6. BATCH: Registrar update se em modo batch
+      if (isInBatch()) {
+        __recordBatchUpdate();
+      } else {
+        // 7. IMPERATIVE SHELL: Side effect de notificação (fora de batch)
+        _notifyHandlers(deepClone(_state));
+      }
+    }
   };
 
+  /**
+   * SHELL: Retorna clone do estado + side effects de tracking
+   */
   const get = (): State<S> => {
-    // Notificar sistema de rastreamento de componentes (se existir)
+    // Side effect: Notificar sistema de rastreamento de componentes (se existir)
     if (typeof globalThis !== "undefined" && (globalThis as any).__SLASH_TRACK_STATE__) {
       (globalThis as any).__SLASH_TRACK_STATE__(stateManager);
     }
+
     const cloned = deepClone(_state);
 
     // Em SSR, criar Proxy para rastrear acessos a propriedades
@@ -80,7 +119,7 @@ export const createState = <S = unknown>(
                 if (arrProp === 'map' || arrProp === 'filter' || arrProp === 'slice') {
                   return function(...args: any[]) {
                     const result = (arrValue as Function).apply(arrTarget, args);
-                    // Rastrear o resultado do método
+                    // Side effect: Rastrear o resultado do método
                     if ((globalThis as any).__SLASH_TRACK_ACCESS__) {
                       (globalThis as any).__SLASH_TRACK_ACCESS__(stateManager, arrProp, result);
                     }
@@ -93,7 +132,7 @@ export const createState = <S = unknown>(
             };
             const arrayProxy = new Proxy(value, arrayHandler);
 
-            // Notificar sobre acesso ao array (agora com Proxy)
+            // Side effect: Notificar sobre acesso ao array (agora com Proxy)
             if ((globalThis as any).__SLASH_TRACK_ACCESS__) {
               (globalThis as any).__SLASH_TRACK_ACCESS__(stateManager, prop, arrayProxy);
             }
@@ -101,7 +140,7 @@ export const createState = <S = unknown>(
             return arrayProxy;
           }
 
-          // Notificar sistema de rastreamento sobre acesso específico
+          // Side effect: Notificar sistema de rastreamento sobre acesso específico
           if ((globalThis as any).__SLASH_TRACK_ACCESS__) {
             (globalThis as any).__SLASH_TRACK_ACCESS__(stateManager, prop, value);
           }
@@ -115,14 +154,50 @@ export const createState = <S = unknown>(
     return cloned;
   };
 
+  /**
+   * SHELL: Registra watcher (side effect)
+   */
   const watch = (callback: StateWatcher<S>): (() => void) => {
     _watchers.add(callback);
-    // Retornar função de unwatch
+
+    // Retornar função de unwatch (cleanup side effect)
     return () => {
       _watchers.delete(callback);
     };
   };
 
-  const stateManager = { set, get, watch };
+  /**
+   * SHELL: Obtém histórico (se habilitado)
+   */
+  const getHistory = (): Readonly<StateHistory<S>> => {
+    if (_history === null) {
+      throw new Error('History not enabled. Create state with { enableHistory: true }');
+    }
+    return _history;
+  };
+
+  /**
+   * SHELL: Limpa histórico (se habilitado)
+   */
+  const clearHistory = (): void => {
+    if (_history === null) {
+      throw new Error('History not enabled. Create state with { enableHistory: true }');
+    }
+    _history = clearHistoryCore(_history);
+  };
+
+  const stateManager: StateManager<S> = { set, get, watch };
+
+  // Adicionar métodos opcionais se histórico habilitado
+  if (_history !== null) {
+    stateManager.getHistory = getHistory;
+    stateManager.clearHistory = clearHistory;
+  }
+
+  // BATCH: Registrar callback para notificar watchers ao finalizar batch
+  __addBatchEndCallback(() => {
+    _notifyHandlers(deepClone(_state));
+  });
+
   return stateManager;
 };

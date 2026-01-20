@@ -1,37 +1,44 @@
-export { combineGuards, executeGuard } from "./guards";
-export type { LinkProps } from "./Link";
-export { Link } from "./Link";
-export type { LazyImport, LazyState } from "./lazy";
-export { clearLazyCache, isLazyLoaded, lazy, preloadLazy } from "./lazy";
-export { clearLoaderCache, runLoader } from "./loaders";
-export { matchRoute, parseParams, parseQuery, rankRoutes, stringifyQuery } from "./matching";
-export { clearOutletGuardCache, Outlet } from "./Outlet";
-export type { PrefetchOptions, PrefetchRoute } from "./prefetch";
-export { clearPrefetchCache, isPrefetched, prefetch, registerRoute } from "./prefetch";
-export type { RouteProps } from "./Route";
-export { clearGuardCache, Route } from "./Route";
-export { Router } from "./Router";
-export { router } from "./state";
-export type { SwitchProps } from "./Switch";
-export { Switch } from "./Switch";
-export type { Transition, TransitionProps } from "./transitions";
-export {
-  applyEnterTransition,
-  applyExitTransition,
-  Transition as TransitionComponent,
-} from "./transitions";
+/**
+ * Router module exports
+ */
+
+// Router core
+export { createRouter } from "./router"
+
+// Components
+export { Router, Link } from "./components"
+
+// Types
 export type {
-  GuardResult,
-  LoaderResult,
-  LoaderState,
-  NavigateOptions,
-  OutletProps,
-  ParseParams,
+  RouteParams,
+  RouteQuery,
+  RouteMeta,
+  RouteComponent,
+  NavigationGuard,
   RouteConfig,
-  RouteGuard,
-  RouteLoader,
   RouteMatch,
-  RoutePattern,
-  RouterProps,
   RouterState,
-} from "./types";
+  RouterMode,
+  RouterConfig,
+  RouterInstance,
+} from "./types"
+
+// Utilities
+export { sanitizePath, parseQuery, buildPath } from "./utils"
+
+// Navigation decision (pure functions)
+export {
+  computeNavigation,
+  parseNavigationPath,
+  findRouteMatch,
+  type NavigationDecision,
+  type NavigationInput,
+} from "./navigation-decision"
+
+// Browser adapter (for testing and SSR)
+export {
+  createBrowserAdapter,
+  createMockAdapter,
+  detectInitialPath,
+  type EnvironmentAdapter,
+} from "./browser-adapter"
