@@ -115,7 +115,7 @@ describe('Router State', () => {
       router._setState({ pathname: '/dashboard' })
 
       expect(callCount).toBe(1)
-      expect(lastPathname).toBe('/dashboard')
+      expect(lastPathname as unknown as string).toBe('/dashboard')
 
       unsubscribe()
 
@@ -126,12 +126,11 @@ describe('Router State', () => {
 
   describe('Navigation API', () => {
     test('replace() chama navigate com replace: true', () => {
-      // Este teste é simplificado pois não estamos no browser
-      // Em um ambiente real, verificaríamos window.history.replaceState
+      // Em ambiente de teste do Bun, window existe, então navigate funciona
       router.replace('/new-path')
 
-      // No servidor (ambiente de teste), apenas verifica que não quebra
-      expect(router.pathname.get()).toBe('/')
+      // Deve ter navegado para o novo path
+      expect(router.pathname.get()).toBe('/new-path')
     })
   })
 

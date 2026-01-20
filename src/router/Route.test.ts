@@ -101,8 +101,8 @@ describe('Route Component', () => {
   test('wildcard funciona', () => {
     router._setState({ pathname: '/files/docs/report.pdf' })
 
-    const FileComponent = ({ params }: { params: { '*': string } }) => {
-      return `File: ${params['*']}`
+    const FileComponent = ({ params }: { params?: Record<string, string>; loaderState?: unknown; outlet?: unknown }) => {
+      return `File: ${params?.['*']}`
     }
 
     const result = Route({
@@ -120,9 +120,10 @@ describe('Route Component', () => {
       return { name: 'John', userId: params.id }
     }
 
-    const UserComponent = ({ params, loaderState }: any) => {
+    const UserComponent = ({ params, loaderState }: { params?: Record<string, string>; loaderState?: unknown; outlet?: unknown }) => {
       if (!loaderState) return 'No loader'
-      return `User ${params.id}: ${loaderState.data.get()?.name}`
+      const state = loaderState as { loading: { get: () => boolean }; data: { get: () => { name: string } | null }; error: { get: () => Error | null } }
+      return `User ${params?.id}: ${state.data.get()?.name}`
     }
 
     const result = Route({
@@ -141,9 +142,10 @@ describe('Route Component', () => {
       return { title: 'My Post', postId: params.id }
     }
 
-    const PostComponent = ({ params, loaderState }: any) => {
+    const PostComponent = ({ params, loaderState }: { params?: Record<string, string>; loaderState?: unknown; outlet?: unknown }) => {
       if (!loaderState) return 'No loader'
-      return `Post ${params.id}: loading=${loaderState.loading.get()}`
+      const state = loaderState as { loading: { get: () => boolean }; data: { get: () => unknown }; error: { get: () => Error | null } }
+      return `Post ${params?.id}: loading=${state.loading.get()}`
     }
 
     const result = Route({
@@ -158,7 +160,7 @@ describe('Route Component', () => {
   test('component sem loader não recebe loaderState', () => {
     router._setState({ pathname: '/about' })
 
-    const AboutComponent = ({ loaderState }: any) => {
+    const AboutComponent = ({ loaderState }: { params?: Record<string, string>; loaderState?: unknown; outlet?: unknown }) => {
       return loaderState ? 'Has loader' : 'No loader'
     }
 
@@ -183,9 +185,10 @@ describe('Route Component', () => {
       }
     }
 
-    const SearchComponent = ({ loaderState }: any) => {
+    const SearchComponent = ({ loaderState }: { params?: Record<string, string>; loaderState?: unknown; outlet?: unknown }) => {
       if (!loaderState) return 'No loader'
-      const data = loaderState.data.get()
+      const state = loaderState as { loading: { get: () => boolean }; data: { get: () => { query: string; page: number } | null }; error: { get: () => Error | null } }
+      const data = state.data.get()
       return `Search: q=${data?.query}, page=${data?.page}`
     }
 
@@ -324,7 +327,7 @@ describe('Route Component', () => {
 
       let receivedParams: Record<string, string> = {}
 
-      const guard = (params: { id: string }) => {
+      const guard = (params: Record<string, string>) => {
         receivedParams = params
         return true
       }
@@ -367,8 +370,10 @@ describe('Route Component', () => {
       // Aguardar guard executar
       await new Promise(resolve => setTimeout(resolve, 50))
 
-      expect(receivedQuery?.get('tab')).toBe('profile')
-      expect(receivedQuery?.get('mode')).toBe('edit')
+      expect(receivedQuery).not.toBeNull()
+      const query = receivedQuery as unknown as URLSearchParams
+      expect(query.get('tab')).toBe('profile')
+      expect(query.get('mode')).toBe('edit')
     })
 
     test('guard executa antes do loader', async () => {
@@ -455,14 +460,14 @@ describe('Route Component', () => {
 
       const ChildComponent = () => 'Child Content'
 
-      const DashboardComponent = ({ outlet }: { outlet?: any }) => {
-        return outlet || 'Dashboard'
+      const DashboardComponent = ({ outlet }: { outlet?: unknown }) => {
+        return (outlet as string) || 'Dashboard'
       }
 
       const result = Route({
         path: '/dashboard',
         component: DashboardComponent,
-        children: ChildComponent({}),
+        children: ChildComponent(),
       })
 
       expect(result).toBe('Child Content')
@@ -490,14 +495,14 @@ describe('Route Component', () => {
       router._setState({ pathname: '/admin/users' })
 
       const UsersContent = () => 'Users List'
-      const AdminLayout = ({ outlet }: { outlet?: any }) => {
-        return `<Layout>${outlet}</Layout>`
+      const AdminLayout = ({ outlet }: { outlet?: unknown }) => {
+        return `<Layout>${outlet as string}</Layout>`
       }
 
       const result = Route({
         path: '/admin/users',
         component: AdminLayout,
-        children: UsersContent({}),
+        children: UsersContent(),
       })
 
       expect(result).toBe('<Layout>Users List</Layout>')
@@ -582,8 +587,9 @@ describe('Route Component', () => {
         return { name: 'John', userId: params.id }
       }
 
-      const UserComponent = ({ loaderState }: any) => {
-        const data = loaderState?.data.get()
+      const UserComponent = ({ loaderState }: { params?: Record<string, string>; loaderState?: unknown; outlet?: unknown }) => {
+        const state = loaderState as { loading: { get: () => boolean }; data: { get: () => { name: string } | null }; error: { get: () => Error | null } } | undefined
+        const data = state?.data.get()
         element.textContent = `User: ${data?.name}`
         return element
       }

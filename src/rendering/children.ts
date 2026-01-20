@@ -39,15 +39,16 @@ export function appendReactiveChild(parent: Node, sig: Reactive<unknown>): void 
 }
 
 export function appendNodeSafe(parent: Node, node: Node): void {
-  // Fragment: é consumido ao append, então clone sempre
+  // Fragment: NÃO precisa clonar, fragments são consumidos no append
+  // e seus filhos são transferidos diretamente (preservando event listeners)
   if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-    parent.appendChild(node.cloneNode(true));
+    parent.appendChild(node);
     return;
   }
-  // Node já está em outro parent? clone para não mover
+  // Node já está em outro parent? Remover do parent anterior antes de mover
+  // Isso preserva event listeners (ao contrário de cloneNode)
   if (node.parentNode && node.parentNode !== parent) {
-    parent.appendChild(node.cloneNode(true));
-    return;
+    node.parentNode.removeChild(node);
   }
   parent.appendChild(node);
 }

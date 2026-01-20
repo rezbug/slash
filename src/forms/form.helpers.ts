@@ -30,7 +30,7 @@ export function textFieldControl<T extends { value: string }>(
   // Criar Reactive a partir de state.value (tipo inferido como Reactive<string>)
   const valueReactive: Reactive<string> = {
     get: () => state.get().value,
-    subscribe: (fn: (v: string) => void) => state.subscribe((s) => fn(s.value)),
+    subscribe: (fn: (v: string) => void) => state.watch((s) => fn(s.value)),
   };
 
   const base = { value: valueReactive } as Record<string, unknown>;
@@ -53,7 +53,7 @@ export function textFieldControl<T extends { value: string }>(
 export function checkboxControl<T extends { value: boolean }>(state: State<T>) {
   const valueReactive: Reactive<boolean> = {
     get: () => state.get().value,
-    subscribe: (fn: (v: boolean) => void) => state.subscribe((s) => fn(s.value)),
+    subscribe: (fn: (v: boolean) => void) => state.watch((s) => fn(s.value)),
   };
 
   const setValue = (newValue: boolean) => {
@@ -75,7 +75,7 @@ export function radioControl<T extends { value: string }>(state: State<T>, value
   const checkedReactive: Reactive<boolean> = {
     get: () => state.get().value === value,
     subscribe: (fn: (v: boolean) => void) => {
-      return state.subscribe((s) => fn(s.value === value));
+      return state.watch((s) => fn(s.value === value));
     },
   };
 
@@ -99,7 +99,7 @@ export function radioControl<T extends { value: string }>(state: State<T>, value
 export function SelectControl<T extends { value: string }>(state: State<T>) {
   const valueReactive: Reactive<string> = {
     get: () => state.get().value,
-    subscribe: (fn: (v: string) => void) => state.subscribe((s) => fn(s.value)),
+    subscribe: (fn: (v: string) => void) => state.watch((s) => fn(s.value)),
   };
 
   const setValue = (newValue: string) => {

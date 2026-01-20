@@ -127,10 +127,10 @@ async function doPrefetch(
       const params = extractParamsFromPath(path);
       const query = new URLSearchParams();
 
-      // Execute loader (result will be handled by useLoader when route is actually navigated to)
+      // Execute loader (result will be handled by runLoader when route is actually navigated to)
       // We just want to warm up any external caches (API calls, etc)
       try {
-        await route.loader({ params, query });
+        await route.loader(params, query);
       } catch {
         // Ignore loader errors during prefetch - they'll be handled properly during actual navigation
       }

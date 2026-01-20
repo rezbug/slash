@@ -1,6 +1,7 @@
 // packages/slash/src/forms/form.helpers.test.ts
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { createState } from '../state';
+import type { Reactive } from '../types';
 import {
   textFieldControl,
   checkboxControl,
@@ -31,7 +32,7 @@ describe('form.helpers', () => {
 
       // Act
       const props = textFieldControl(value);
-      input.value = (props.value as typeof value).get();
+      input.value = (props.value as Reactive<string>).get();
 
       // Assert
       expect(input.value).toBe('hello');
@@ -125,7 +126,7 @@ describe('form.helpers', () => {
 
       // Act
       const props = checkboxControl(checked);
-      checkbox.checked = (props.checked as typeof checked).get();
+      checkbox.checked = (props.checked as Reactive<boolean>).get();
 
       // Assert
       expect(checkbox.checked).toBe(true);
@@ -272,7 +273,7 @@ describe('form.helpers', () => {
 
       // Act
       const props = SelectControl(value);
-      select.value = (props.value as typeof value).get();
+      select.value = (props.value as Reactive<string>).get();
 
       // Assert
       expect(select.value).toBe('option1');
@@ -413,7 +414,7 @@ describe('form.helpers', () => {
 
       // Act
       const originalAddEventListener = container.addEventListener;
-      container.addEventListener = function(...args) {
+      container.addEventListener = function(...args: Parameters<typeof originalAddEventListener>) {
         listenerAdded = true;
         return originalAddEventListener.apply(this, args);
       };

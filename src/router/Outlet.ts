@@ -1,6 +1,6 @@
 import type { Child } from "../types";
 import { executeGuard } from "./guards";
-import { useLoader } from "./loaders";
+import { runLoader } from "./loaders";
 import { matchRoute } from "./matching";
 import { router } from "./state";
 import type { LoaderState, OutletProps } from "./types";
@@ -66,7 +66,7 @@ export function Outlet(props: OutletProps): Child {
           guardState = { executing: true, result: null };
           guardCache.set(cacheKey, guardState);
 
-          executeGuard(route.guard, allParams as any, query).then((result) => {
+          executeGuard(route.guard, allParams, query).then((result) => {
             const cached = guardCache.get(cacheKey);
             if (cached) {
               cached.executing = false;
@@ -91,11 +91,11 @@ export function Outlet(props: OutletProps): Child {
       }
 
       // Executar loader se fornecido
-      let loaderState: LoaderState | undefined;
+      let loaderState: unknown;
 
       if (route.loader) {
         const query = router.query.get();
-        loaderState = useLoader(route.loader, allParams as any, query);
+        loaderState = runLoader(route.loader, allParams, query);
       }
 
       // Se a rota tem children, tentar renderizar children
@@ -111,7 +111,7 @@ export function Outlet(props: OutletProps): Child {
 
       // Renderizar o componente da rota
       return route.component({
-        params: allParams as any,
+        params: allParams,
         loaderState,
         outlet,
       });

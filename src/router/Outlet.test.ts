@@ -46,7 +46,7 @@ describe('Outlet Component', () => {
   test('renderiza primeira rota que match', () => {
     router._setState({ pathname: '/users/123' })
 
-    const UserComponent = ({ params }: { params: { id: string } }) => `User ${params.id}`
+    const UserComponent = ({ params }: { params: Record<string, string> }) => `User ${params.id}`
     const NotFoundComponent = () => '404'
 
     const result = Outlet({
@@ -86,8 +86,8 @@ describe('Outlet Component', () => {
   test('passa outlet para component parent', () => {
     router._setState({ pathname: '/dashboard/profile' })
 
-    const DashboardComponent = ({ outlet }: { outlet?: any }) => {
-      return outlet || 'Dashboard'
+    const DashboardComponent = ({ outlet }: { outlet?: unknown }) => {
+      return (outlet as string) || 'Dashboard'
     }
 
     const ProfileComponent = () => 'Profile'
@@ -137,8 +137,8 @@ describe('Outlet Component', () => {
   test('renderiza nested routes com múltiplos níveis', () => {
     router._setState({ pathname: '/app/settings/profile' })
 
-    const AppComponent = ({ outlet }: { outlet?: any }) => outlet || 'App'
-    const SettingsComponent = ({ outlet }: { outlet?: any }) => outlet || 'Settings'
+    const AppComponent = ({ outlet }: { outlet?: unknown }) => (outlet as string) || 'App'
+    const SettingsComponent = ({ outlet }: { outlet?: unknown }) => (outlet as string) || 'Settings'
     const ProfileComponent = () => 'Profile Settings'
 
     const result = Outlet({

@@ -1,4 +1,5 @@
 import { createState } from "../state";
+import type { Reactive } from "../types";
 import type { LoaderState, RouteLoader } from "./types";
 
 // Cache com TTL de 5 minutos
@@ -22,18 +23,44 @@ export function clearLoaderCache(): void {
   loaderCache.clear();
 }
 
-// Hook para executar e gerenciar loaders
-export function useLoader<Params extends Record<string, string>, Data>(
+// Tipo de retorno do runLoader
+type LoaderResult<Data> = {
+  loading: Reactive<boolean>;
+  data: Reactive<Data | null>;
+  error: Reactive<Error | null>;
+};
+
+// Executa e gerencia loaders de rota
+export function runLoader<Params extends Record<string, string>, Data>(
   loader: RouteLoader<Params, Data>,
   params: Params,
   query: URLSearchParams,
-): LoaderState<Data> {
+): LoaderResult<Data> {
   // Criar estado reativo para o loader
   const loaderState = createState<LoaderState<Data>>({
     loading: false,
     data: null,
     error: null,
   });
+
+  // Helper para criar Reactive de uma propriedade específica
+  const createPropertyReactive = <K extends keyof LoaderState<Data>>(
+    key: K
+  ): Reactive<LoaderState<Data>[K]> => {
+    return {
+      get: () => loaderState.get()[key],
+      subscribe: (fn: (v: LoaderState<Data>[K]) => void) => {
+        return loaderState.watch((state) => fn(state[key]));
+      },
+    };
+  };
+
+  // Criar o objeto de retorno uma única vez
+  const loaderResult: LoaderResult<Data> = {
+    loading: createPropertyReactive("loading"),
+    data: createPropertyReactive("data"),
+    error: createPropertyReactive("error"),
+  };
 
   // Criar cache key
   const cacheKey = createCacheKey(params, query);
@@ -46,7 +73,7 @@ export function useLoader<Params extends Record<string, string>, Data>(
       data: cached.data as Data,
       error: null,
     });
-    return loaderState;
+    return loaderResult;
   }
 
   // Executar loader
@@ -105,5 +132,5 @@ export function useLoader<Params extends Record<string, string>, Data>(
     });
   }
 
-  return loaderState;
+  return loaderResult;
 }

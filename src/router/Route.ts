@@ -1,6 +1,6 @@
 import type { Child } from "../types";
 import { executeGuard } from "./guards";
-import { useLoader } from "./loaders";
+import { runLoader } from "./loaders";
 import { matchRoute } from "./matching";
 import { router } from "./state";
 import type { Transition } from "./transitions";
@@ -11,7 +11,7 @@ export type RouteProps<Path extends string = string, Data = unknown> = {
   path: Path;
   component: (props: {
     params: ParseParams<Path>;
-    loaderState?: LoaderState<Data>;
+    loaderState?: unknown;
     outlet?: Child;
   }) => Child;
   loader?: RouteLoader<ParseParams<Path>, Data>;
@@ -96,11 +96,11 @@ export function Route<Path extends string, Data = unknown>(props: RouteProps<Pat
   }
 
   // Executar loader se fornecido
-  let loaderState: LoaderState<Data> | undefined;
+  let loaderState: unknown;
 
   if (props.loader) {
     const query = router.query.get();
-    loaderState = useLoader(props.loader, match.params as ParseParams<Path>, query);
+    loaderState = runLoader(props.loader, match.params as ParseParams<Path>, query);
   }
 
   // Renderizar component com params, loaderState e outlet (children)

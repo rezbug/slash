@@ -25,7 +25,6 @@ export type Child =
   | null
   | undefined
   | Reactive<unknown>
-  | (() => unknown) // Funções para tracking automático
   | Child[]
   | readonly Child[];
 
@@ -73,3 +72,5 @@ export type ErrorBoundaryProps = {
   onError?: (error: Error, errorInfo: { componentStack?: string }) => void;
   children: Child;
 };
+
+export type Component<P = any> = (props: P) => Child;

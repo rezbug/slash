@@ -7,7 +7,7 @@ export type NavigateOptions = {
 
 export type RouterProps = {
   location?: string;
-  children: Child;
+  children: () => Child;
 };
 
 export type RouterState = {
@@ -55,12 +55,12 @@ export type GuardResult = boolean | string;
 export type RouteConfig<Path extends string = string, Data = unknown> = {
   path: Path;
   component: (props: {
-    params: ParseParams<Path>;
-    loaderState?: LoaderState<Data>;
+    params: Record<string, string>;
+    loaderState?: unknown;
     outlet?: Child;
   }) => Child;
-  loader?: RouteLoader<ParseParams<Path>, Data>;
-  guard?: RouteGuard<ParseParams<Path>>;
+  loader?: RouteLoader<Record<string, string>, Data>;
+  guard?: RouteGuard<Record<string, string>>;
   children?: RouteConfig[];
 };
 

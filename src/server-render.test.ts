@@ -18,7 +18,10 @@ describe("renderToString", () => {
   test("renderiza e captura signals no estado", () => {
     // Arrange
     const count = createState({ value: 42 });
-    const Component = () => htmlString`<div>Count: ${count.value}</div>`;
+    const Component = () => {
+      const { value } = count.get();
+      return htmlString`<div>Count: ${value}</div>`;
+    };
 
     // Act
     const { html, state } = renderToString(Component);
@@ -35,7 +38,10 @@ describe("renderToString", () => {
   test("renderiza signals em atributos com data-signal markers", () => {
     // Arrange
     const className = createState({ value: "active" });
-    const Component = () => htmlString`<div class=${className.value}>Content</div>`;
+    const Component = () => {
+      const { value } = className.get();
+      return htmlString`<div class=${value}>Content</div>`;
+    };
 
     // Act
     const { html, state } = renderToString(Component);
@@ -193,25 +199,25 @@ describe("renderToString", () => {
   test("reseta signal registry entre renderizações", () => {
     // Arrange
     const sig1 = createState({ value: "first" });
-    const Component1 = () => htmlString`<div>${sig1.value}</div>`;
+    const Component1 = () => htmlString`<div>${sig1}</div>`;
 
     // Act - primeira renderização
     const result1 = renderToString(Component1);
 
     // Assert - primeira renderização
     expect(Object.keys(result1.state)).toHaveLength(1);
-    expect(result1.state.s0).toBe("first");
+    expect(result1.state.s0).toEqual({ value: "first" });
 
     // Arrange - segunda renderização
     const sig2 = createState({ value: "second" });
-    const Component2 = () => htmlString`<div>${sig2.value}</div>`;
+    const Component2 = () => htmlString`<div>${sig2}</div>`;
 
     // Act - segunda renderização
     const result2 = renderToString(Component2);
 
     // Assert - segunda renderização (registry foi resetado)
     expect(Object.keys(result2.state)).toHaveLength(1);
-    expect(result2.state.s0).toBe("second"); // Counter resetou
+    expect(result2.state.s0).toEqual({ value: "second" }); // Counter resetou
   });
 });
 
@@ -235,7 +241,10 @@ describe("renderToStream", () => {
   test("inclui script de estado no final do stream", async () => {
     // Arrange
     const count = createState({ value: 99 });
-    const Component = () => htmlString`<div>${count.value}</div>`;
+    const Component = () => {
+      const { value } = count.get();
+      return htmlString`<div>${value}</div>`;
+    };
     const chunks: string[] = [];
 
     // Act
@@ -278,7 +287,10 @@ describe("renderToStream", () => {
     // Arrange & Act - Primeira stream
     const sig1 = createState({ value: "stream1" });
     const chunks1: string[] = [];
-    for await (const chunk of renderToStream(() => htmlString`<div>${sig1.value}</div>`)) {
+    for await (const chunk of renderToStream(() => {
+      const { value } = sig1.get();
+      return htmlString`<div>${value}</div>`;
+    })) {
       chunks1.push(chunk);
     }
 
@@ -289,7 +301,10 @@ describe("renderToStream", () => {
     // Arrange & Act - Segunda stream
     const sig2 = createState({ value: "stream2" });
     const chunks2: string[] = [];
-    for await (const chunk of renderToStream(() => htmlString`<div>${sig2.value}</div>`)) {
+    for await (const chunk of renderToStream(() => {
+      const { value } = sig2.get();
+      return htmlString`<div>${value}</div>`;
+    })) {
       chunks2.push(chunk);
     }
 
@@ -302,13 +317,16 @@ describe("renderToStream", () => {
     // Arrange
     const user = { name: "João", age: 30 };
     const isActive = createState({ value: true });
-    const Component = () => htmlString`
-      <div class="profile">
-        <h1>${user.name}</h1>
-        <p>Age: ${user.age}</p>
-        <span class=${isActive.value}>Status</span>
-      </div>
-    `;
+    const Component = () => {
+      const { value } = isActive.get();
+      return htmlString`
+        <div class="profile">
+          <h1>${user.name}</h1>
+          <p>Age: ${user.age}</p>
+          <span class=${value}>Status</span>
+        </div>
+      `;
+    };
     const chunks: string[] = [];
 
     // Act
@@ -327,7 +345,10 @@ describe("renderToStream", () => {
   test("renderiza signal value em input", () => {
     // Arrange
     const state = createState({ value: "test" });
-    const Component = () => htmlString`<input value=${state.value} />`;
+    const Component = () => {
+      const { value } = state.get();
+      return htmlString`<input value=${value} />`;
+    };
 
     // Act
     const { html } = renderToString(Component);
@@ -340,7 +361,10 @@ describe("renderToStream", () => {
   test("renderiza signal checked em checkbox", () => {
     // Arrange
     const state = createState({ value: true });
-    const Component = () => htmlString`<input type="checkbox" checked=${state.value} />`;
+    const Component = () => {
+      const { value } = state.get();
+      return htmlString`<input type="checkbox" checked=${value} />`;
+    };
 
     // Act
     const { html } = renderToString(Component);
@@ -353,7 +377,10 @@ describe("renderToStream", () => {
   test("não renderiza checked quando signal é false", () => {
     // Arrange
     const state = createState({ value: false });
-    const Component = () => htmlString`<input type="checkbox" checked=${state.value} />`;
+    const Component = () => {
+      const { value } = state.get();
+      return htmlString`<input type="checkbox" checked=${value} />`;
+    };
 
     // Act
     const { html } = renderToString(Component);
@@ -377,7 +404,10 @@ describe("renderToStream", () => {
   test("renderiza signal como array", () => {
     // Arrange
     const state = createState({ value: ["a", "b", "c"] });
-    const Component = () => htmlString`<div>${state.value}</div>`;
+    const Component = () => {
+      const { value } = state.get();
+      return htmlString`<div>${value}</div>`;
+    };
 
     // Act
     const { html } = renderToString(Component);
@@ -429,7 +459,7 @@ describe("renderToStream", () => {
 
     const App = () => htmlString`
       <ul>
-        ${state.todos.map((t) => htmlString`<li>${t.text}</li>`)}
+        ${state.get().todos.map((t: Todo) => htmlString`<li>${t.text}</li>`)}
       </ul>
     `;
 

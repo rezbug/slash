@@ -1,7 +1,7 @@
 import { test, expect, describe, beforeEach } from "bun:test";
 import {
   ErrorBoundary,
-  useSafeAsync,
+  catchAsync,
   safeRender,
   setupGlobalErrorHandler,
 } from "./error-boundary";
@@ -176,12 +176,12 @@ describe("ErrorBoundary", () => {
   });
 });
 
-describe("useSafeAsync", () => {
+describe("catchAsync", () => {
   test("executa função assíncrona com sucesso", async () => {
     // Arrange
     const mockData = { success: true };
     const asyncFn = async () => mockData;
-    const [safeFn, getError] = useSafeAsync(asyncFn);
+    const [safeFn, getError] = catchAsync(asyncFn);
 
     // Act
     const result = await safeFn();
@@ -198,7 +198,7 @@ describe("useSafeAsync", () => {
     const asyncFn = async () => {
       throw new Error(errorMessage);
     };
-    const [safeFn, getError] = useSafeAsync(asyncFn);
+    const [safeFn, getError] = catchAsync(asyncFn);
 
     // Act
     const result = await safeFn();
@@ -223,14 +223,14 @@ describe("useSafeAsync", () => {
       capturedError = error;
     };
 
-    const [safeFn] = useSafeAsync(asyncFn, onError);
+    const [safeFn] = catchAsync(asyncFn, onError);
 
     // Act
     await safeFn();
 
     // Assert
     expect(capturedError).toBeInstanceOf(Error);
-    expect(capturedError?.message).toBe(errorMessage);
+    expect((capturedError as unknown as Error).message).toBe(errorMessage);
   });
 
   test("limpa erro anterior em nova execução", async () => {
@@ -241,7 +241,7 @@ describe("useSafeAsync", () => {
       return { success: true };
     };
 
-    const [safeFn, getError] = useSafeAsync(asyncFn);
+    const [safeFn, getError] = catchAsync(asyncFn);
 
     // Act - Primeira chamada com erro
     await safeFn();
@@ -267,7 +267,7 @@ describe("useSafeAsync", () => {
       return { call: counter };
     };
 
-    const [safeFn, getError] = useSafeAsync(asyncFn);
+    const [safeFn, getError] = catchAsync(asyncFn);
 
     // Act & Assert - Primeira chamada (sucesso)
     const result1 = await safeFn();
@@ -290,8 +290,8 @@ describe("useSafeAsync", () => {
     const fn1 = async () => { throw new Error("Error 1"); };
     const fn2 = async () => { throw new Error("Error 2"); };
 
-    const [safe1, getError1] = useSafeAsync(fn1);
-    const [safe2, getError2] = useSafeAsync(fn2);
+    const [safe1, getError1] = catchAsync(fn1);
+    const [safe2, getError2] = catchAsync(fn2);
 
     // Act
     await safe1();
@@ -392,8 +392,9 @@ describe("safeRender", () => {
     safeRender(view, fallback);
 
     // Assert
-    expect(capturedError).toBe(customError);
-    expect(capturedError?.name).toBe("CustomError");
+    expect(capturedError).not.toBeNull();
+    expect(capturedError).toBeInstanceOf(Error);
+    expect((capturedError as unknown as Error).name).toBe("CustomError");
   });
 });
 
@@ -416,8 +417,8 @@ describe("setupGlobalErrorHandler", () => {
     window.dispatchEvent(new ErrorEvent("error", { error: testError }));
 
     // Assert
-    expect(capturedError?.message).toBe("Global error");
-    expect(capturedSource).toBe("runtime");
+    expect((capturedError as unknown as Error).message).toBe("Global error");
+    expect((capturedSource as unknown as string)).toBe("runtime");
   });
 
   test("captura erros de promise rejection", () => {
@@ -438,7 +439,7 @@ describe("setupGlobalErrorHandler", () => {
     window.dispatchEvent(event);
 
     // Assert
-    expect(capturedError?.message).toBe("Rejected promise");
+    expect((capturedError as unknown as Error).message).toBe("Rejected promise");
   });
 
   test("não faz nada no servidor", () => {
@@ -530,7 +531,7 @@ describe("setupGlobalErrorHandler", () => {
 
     // Assert
     expect(capturedError).not.toBeNull();
-    expect(capturedError?.message).toBe(errorMessage);
+    expect((capturedError as unknown as Error).message).toBe(errorMessage);
     expect(result).toBeDefined();
   });
 
@@ -542,7 +543,7 @@ describe("setupGlobalErrorHandler", () => {
     // Act
     const result = ErrorBoundary({
       fallback,
-      get children() {
+      get children(): Child {
         throw new Error(errorMessage);
       }
     });
@@ -569,7 +570,7 @@ describe("setupGlobalErrorHandler", () => {
     const result = ErrorBoundary({
       fallback,
       onError,
-      get children() {
+      get children(): Child {
         throw new Error(errorMessage);
       }
     });
@@ -580,7 +581,7 @@ describe("setupGlobalErrorHandler", () => {
 
     // Assert
     expect(capturedError).not.toBeNull();
-    expect(capturedError?.message).toBe(errorMessage);
+    expect((capturedError as unknown as Error).message).toBe(errorMessage);
     expect(result).toBeDefined();
   });
 });

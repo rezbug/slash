@@ -1,12 +1,12 @@
 import { describe, test, expect, beforeEach } from 'bun:test'
-import { useLoader, clearLoaderCache } from './loaders'
+import { runLoader, clearLoaderCache } from './loaders'
 
 describe('Loader System', () => {
   beforeEach(() => {
     clearLoaderCache()
   })
 
-  describe('useLoader', () => {
+  describe('runLoader', () => {
     test('should execute loader with params and return data', async () => {
       // Arrange
       const loader = async (params: { id: string }) => {
@@ -16,7 +16,7 @@ describe('Loader System', () => {
       const query = new URLSearchParams()
 
       // Act
-      const result = useLoader(loader, params, query)
+      const result = runLoader(loader, params, query)
 
       // Assert
       expect(result.loading.get()).toBe(true)
@@ -42,10 +42,10 @@ describe('Loader System', () => {
       const query = new URLSearchParams()
 
       // Act
-      const result1 = useLoader(loader, params, query)
+      const result1 = runLoader(loader, params, query)
       await new Promise(resolve => setTimeout(resolve, 10))
 
-      const result2 = useLoader(loader, params, query)
+      const result2 = runLoader(loader, params, query)
       await new Promise(resolve => setTimeout(resolve, 10))
 
       // Assert
@@ -63,10 +63,10 @@ describe('Loader System', () => {
       const query = new URLSearchParams()
 
       // Act
-      const result1 = useLoader(loader, { id: '123' }, query)
+      const result1 = runLoader(loader, { id: '123' }, query)
       await new Promise(resolve => setTimeout(resolve, 10))
 
-      const result2 = useLoader(loader, { id: '456' }, query)
+      const result2 = runLoader(loader, { id: '456' }, query)
       await new Promise(resolve => setTimeout(resolve, 10))
 
       // Assert
@@ -84,7 +84,7 @@ describe('Loader System', () => {
       const query = new URLSearchParams()
 
       // Act
-      const result = useLoader(loader, params, query)
+      const result = runLoader(loader, params, query)
 
       // Assert
       expect(result.loading.get()).toBe(true)
@@ -106,7 +106,7 @@ describe('Loader System', () => {
       const query = new URLSearchParams()
 
       // Act
-      const result = useLoader(loader, params, query)
+      const result = runLoader(loader, params, query)
 
       // Assert
       expect(result.loading.get()).toBe(false)
@@ -125,11 +125,11 @@ describe('Loader System', () => {
 
       // Act
       const query1 = new URLSearchParams('q=test1')
-      const result1 = useLoader(loader, params, query1)
+      const result1 = runLoader(loader, params, query1)
       await new Promise(resolve => setTimeout(resolve, 10))
 
       const query2 = new URLSearchParams('q=test2')
-      const result2 = useLoader(loader, params, query2)
+      const result2 = runLoader(loader, params, query2)
       await new Promise(resolve => setTimeout(resolve, 10))
 
       // Assert
@@ -149,13 +149,13 @@ describe('Loader System', () => {
       const query = new URLSearchParams()
 
       // Act
-      const result1 = useLoader(loader, params, query)
+      const result1 = runLoader(loader, params, query)
       await new Promise(resolve => setTimeout(resolve, 10))
 
       // Simulate time passing (we'll test cache clearing directly)
       clearLoaderCache()
 
-      const result2 = useLoader(loader, params, query)
+      const result2 = runLoader(loader, params, query)
       await new Promise(resolve => setTimeout(resolve, 10))
 
       // Assert
@@ -175,12 +175,12 @@ describe('Loader System', () => {
       const query = new URLSearchParams()
 
       // Act
-      useLoader(loader, params, query)
+      runLoader(loader, params, query)
       await new Promise(resolve => setTimeout(resolve, 10))
 
       clearLoaderCache()
 
-      useLoader(loader, params, query)
+      runLoader(loader, params, query)
       await new Promise(resolve => setTimeout(resolve, 10))
 
       // Assert

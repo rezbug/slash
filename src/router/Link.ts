@@ -4,6 +4,10 @@ import type { Child } from "../types";
 import { prefetch } from "./prefetch";
 import { router } from "./state";
 
+declare global {
+  var __SLASH_SSR__: boolean | undefined;
+}
+
 export type LinkProps = {
   to: string;
   children: Child;
@@ -15,16 +19,14 @@ export type LinkProps = {
   prefetchDelay?: number;
 };
 
-// Detecta SSR: sem window OU running em Bun test
-const IS_SSR = typeof window === "undefined" || (typeof Bun !== "undefined" && (Bun as any)?.jest);
-
 /**
  * Componente Link
  * Link de navegação que intercepta clicks no CSR
  * Suporta prefetching automático no hover (client-only)
  */
 export function Link(props: LinkProps): Child {
-  const isServer = IS_SSR;
+  // Detecta SSR: sem window OU flag global __SLASH_SSR__
+  const isServer = typeof window === "undefined" || globalThis.__SLASH_SSR__ === true;
 
   // Determinar se o link está ativo
   const pathname = router.pathname.get();

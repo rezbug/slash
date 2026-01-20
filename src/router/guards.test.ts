@@ -71,7 +71,9 @@ describe('guards', () => {
       }
 
       await executeGuard(guard, {}, query)
-      expect(receivedQuery).toEqual(query)
+      expect(receivedQuery).not.toBeNull()
+      const q = receivedQuery as unknown as URLSearchParams
+      expect(q.toString()).toBe(query.toString())
     })
   })
 

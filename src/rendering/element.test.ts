@@ -15,7 +15,7 @@ describe("rendering/element", () => {
     });
 
     it("cria elemento SVG para tags SVG", () => {
-      const el = h("svg", null);
+      const el = h("svg", null) as Element;
       expect(el.namespaceURI).toBe("http://www.w3.org/2000/svg");
     });
 

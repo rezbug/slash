@@ -115,7 +115,7 @@ describe('Router Integration (SSR - Imperative API)', () => {
   })
 
   test('wildcard captura segmentos restantes', () => {
-    const Files = ({ params }: { params: { '*': string } }) => `File: ${params['*']}`
+    const Files = ({ params }: { params: Record<string, string> }) => `File: ${params['*']}`
 
     const App = () => Router({
       location: '/files/docs/report.pdf',

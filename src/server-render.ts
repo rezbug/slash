@@ -2,9 +2,23 @@
 import htm from "htm";
 import type { Child, Props, Reactive } from "./types";
 
+// Flag global para indicar modo SSR
+declare global {
+  var __SLASH_SSR__: boolean | undefined;
+  var __SLASH_TRACK_STATE__: ((state: Reactive) => void) | undefined;
+  var __SLASH_TRACK_ACCESS__: ((state: Reactive, prop: string | symbol, value: unknown) => void) | undefined;
+}
+
 // Registry de reactive objects para serialização
 const signalRegistry = new Map<string, unknown>();
 let signalCounter = 0;
+
+// Tracking de estados acessados durante renderização
+const accessedStates = new Set<Reactive>();
+
+// Map para rastrear valores específicos acessados (state + propriedade)
+type AccessKey = { state: Reactive; prop: string | symbol };
+const accessedValues = new Map<unknown, AccessKey>();
 
 // Void elements que não têm tag de fechamento
 const VOID_ELEMENTS = new Set([
@@ -38,14 +52,28 @@ function isReactive(x: unknown): x is Reactive {
   return (
     !!x &&
     typeof (x as Record<string, unknown>).get === "function" &&
-    typeof (x as Record<string, unknown>).subscribe === "function"
+    (typeof (x as Record<string, unknown>).watch === "function" ||
+     typeof (x as Record<string, unknown>).subscribe === "function")
   );
 }
 
 function captureSignal(signal: Reactive): string {
   const id = `s${signalCounter++}`;
-  signalRegistry.set(id, signal.get());
+  const value = signal.get();
+  signalRegistry.set(id, value);
   return id;
+}
+
+// Helper para capturar um valor que foi acessado via state.get()
+function captureAccessedValue(value: unknown): string | undefined {
+  const access = accessedValues.get(value);
+  if (access) {
+    // Capturar o signal com a propriedade acessada
+    const id = `s${signalCounter++}`;
+    signalRegistry.set(id, value);
+    return id;
+  }
+  return undefined;
 }
 
 function processClass(val: unknown): string {
@@ -161,14 +189,28 @@ function childToString(child: Child): string {
     return `<!--reactive-start:${id}-->${escapeHtml(String(value ?? ""))}<!--reactive-end:${id}-->`;
   }
 
-  // Array
+  // Array - verificar se veio de um state
   if (Array.isArray(child)) {
+    const id = captureAccessedValue(child);
+    if (id) {
+      return `<!--reactive-start:${id}-->${child.map(childToString).join("")}<!--reactive-end:${id}-->`;
+    }
     return child.map(childToString).join("");
   }
 
-  // String (retornada por htmlString)
+  // String - pode ser valor reativo OU HTML já processado
   if (typeof child === "string") {
-    return child; // Já é HTML, não escapar
+    const id = captureAccessedValue(child);
+    if (id) {
+      // String reativa (veio de state.get())
+      return `<!--reactive-start:${id}-->${escapeHtml(child)}<!--reactive-end:${id}-->`;
+    }
+    // String normal (HTML já processado ou literal)
+    // Se começa com <, assume que é HTML; caso contrário, escapa
+    if (child.startsWith('<')) {
+      return child; // Já é HTML
+    }
+    return escapeHtml(child);
   }
 
   // Node ou outros objetos (não devem acontecer no SSR)
@@ -179,7 +221,13 @@ function childToString(child: Child): string {
     return "[Object]";
   }
 
-  // Primitivo
+  // Primitivo (number, boolean) - verificar se foi acessado de um state
+  const id = captureAccessedValue(child);
+  if (id) {
+    return `<!--reactive-start:${id}-->${escapeHtml(String(child))}<!--reactive-end:${id}-->`;
+  }
+
+  // Primitivo normal
   return escapeHtml(String(child));
 }
 
@@ -187,16 +235,119 @@ function childToString(child: Child): string {
 export function hString(tag: unknown, props: Props | null, ...children: Child[]): string {
   // Componente função
   if (typeof tag === "function") {
-    const result = (tag as (p: Record<string, unknown>) => Child | string)({
-      ...(props || {}),
-      children,
-    });
-    return typeof result === "string" ? result : childToString(result);
+    // Resetar tracking de states antes de executar o componente
+    accessedStates.clear();
+
+    // Configurar tracking de acessos durante a execução do componente
+    const previousTracker = globalThis.__SLASH_TRACK_STATE__;
+    globalThis.__SLASH_TRACK_STATE__ = (state: Reactive) => {
+      accessedStates.add(state);
+    };
+
+    try {
+      const result = (tag as (p: Record<string, unknown>) => Child | string)({
+        ...(props || {}),
+        children,
+      });
+
+      return typeof result === "string" ? result : childToString(result);
+    } finally {
+      // Restaurar tracker anterior
+      globalThis.__SLASH_TRACK_STATE__ = previousTracker;
+    }
   }
 
   // Elemento nativo
   const tagName = String(tag || "div");
-  const attrs = propsToAttrs(props);
+
+  // Processar atributos - pode conter ReactiveValues em props
+  let attrs = "";
+  if (props) {
+    for (const [key, val] of Object.entries(props)) {
+      if (key === "children") continue;
+
+      // Pular event handlers
+      if (key.startsWith("on") && key[2]?.toUpperCase() === key[2]) {
+        continue;
+      }
+
+      // Verificar se o valor foi acessado de um state (via destructuring)
+      const accessedId = captureAccessedValue(val);
+      if (accessedId) {
+        if (key === "class" || key === "className") {
+          const className = processClass(val);
+          if (className) {
+            attrs += ` class="${escapeHtml(className)}" data-reactive-class="${accessedId}"`;
+          }
+        } else if (key === "value") {
+          attrs += ` value="${escapeHtml(String(val ?? ""))}" data-reactive-value="${accessedId}"`;
+        } else if (key === "checked") {
+          if (val) attrs += " checked";
+          attrs += ` data-reactive-checked="${accessedId}"`;
+        } else {
+          // Atributos normais não devem ser marcados como reativos se não são signals diretos
+          attrs += ` ${key}="${escapeHtml(String(val))}"`;
+        }
+        continue;
+      }
+
+      // Processar normalmente - verificar se é reativo (signal direto)
+      if (isReactive(val)) {
+        const id = captureSignal(val);
+        const value = val.get();
+
+        if (key === "class" || key === "className") {
+          const className = processClass(value);
+          if (className) {
+            attrs += ` class="${escapeHtml(className)}" data-reactive-class="${id}"`;
+          }
+        } else if (key === "value") {
+          attrs += ` value="${escapeHtml(String(value ?? ""))}" data-reactive-value="${id}"`;
+        } else if (key === "checked") {
+          if (value) attrs += " checked";
+          attrs += ` data-reactive-checked="${id}"`;
+        } else {
+          attrs += ` ${key}="${escapeHtml(String(value))}" data-reactive-${key}="${id}"`;
+        }
+        continue;
+      }
+
+      // Processar classes normais
+      if (key === "class" || key === "className") {
+        const className = processClass(val);
+        if (className) {
+          attrs += ` class="${escapeHtml(className)}"`;
+        }
+        continue;
+      }
+
+      // Style object
+      if (key === "style" && val && typeof val === "object") {
+        const styleStr = Object.entries(val as Record<string, unknown>)
+          .map(([k, v]) => {
+            const kebab = k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+            return `${kebab}: ${v}`;
+          })
+          .join("; ");
+        if (styleStr) {
+          attrs += ` style="${escapeHtml(styleStr)}"`;
+        }
+        continue;
+      }
+
+      // Boolean attributes
+      if (["checked", "selected", "disabled", "readonly"].includes(key)) {
+        if (val) attrs += ` ${key}`;
+        continue;
+      }
+
+      // Atributos normais
+      if (val != null && val !== false) {
+        attrs += ` ${key}="${escapeHtml(String(val))}"`;
+      }
+    }
+  }
+
   const childHtml = children.map(childToString).join("");
 
   // Void elements (auto-fecham)
@@ -220,61 +371,87 @@ export function renderToString(view: Child | (() => Child)): {
   html: string;
   state: Record<string, unknown>;
 } {
+  // Ativar modo SSR
+  globalThis.__SLASH_SSR__ = true;
+
   // Reset do registry
   signalRegistry.clear();
   signalCounter = 0;
+  accessedStates.clear();
 
-  // Resolver view
-  const resolved = typeof view === "function" ? view() : view;
+  // Configurar tracking global de states
+  globalThis.__SLASH_TRACK_STATE__ = (state: Reactive) => {
+    accessedStates.add(state);
+  };
 
-  // Renderizar para string
-  const html = childToString(resolved as Child);
-  const state = Object.fromEntries(signalRegistry);
+  // Configurar tracking de acessos a propriedades
+  globalThis.__SLASH_TRACK_ACCESS__ = (state: Reactive, prop: string | symbol, value: unknown) => {
+    // Armazenar o valor com informação sobre de onde veio
+    accessedValues.set(value, { state, prop });
+  };
 
-  return { html, state };
+  try {
+    // Resolver view
+    const resolved = typeof view === "function" ? view() : view;
+
+    // Renderizar para string
+    const html = childToString(resolved as Child);
+    const state = Object.fromEntries(signalRegistry);
+
+    return { html, state };
+  } finally {
+    // Desativar modo SSR
+    globalThis.__SLASH_SSR__ = false;
+    globalThis.__SLASH_TRACK_STATE__ = undefined;
+    globalThis.__SLASH_TRACK_ACCESS__ = undefined;
+    accessedValues.clear();
+  }
 }
 
 // Streaming SSR: renderiza para ReadableStream
 export async function* renderToStream(
   view: Child | (() => Child),
 ): AsyncGenerator<string, void, unknown> {
+  // Ativar modo SSR
+  globalThis.__SLASH_SSR__ = true;
+
   // Reset do registry
   signalRegistry.clear();
   signalCounter = 0;
+  accessedStates.clear();
 
-  // Resolver view
-  const resolved = typeof view === "function" ? view() : view;
+  // Configurar tracking global de states
+  globalThis.__SLASH_TRACK_STATE__ = (state: Reactive) => {
+    accessedStates.add(state);
+  };
 
-  // Renderizar para string em chunks
-  const html = childToString(resolved as Child);
+  // Configurar tracking de acessos a propriedades
+  globalThis.__SLASH_TRACK_ACCESS__ = (state: Reactive, prop: string | symbol, value: unknown) => {
+    // Armazenar o valor com informação sobre de onde veio
+    accessedValues.set(value, { state, prop });
+  };
 
-  // Yield HTML em chunks de 16KB para melhor performance
-  const chunkSize = 16384;
-  for (let i = 0; i < html.length; i += chunkSize) {
-    yield html.slice(i, i + chunkSize);
+  try {
+    // Resolver view
+    const resolved = typeof view === "function" ? view() : view;
+
+    // Renderizar para string em chunks
+    const html = childToString(resolved as Child);
+
+    // Yield HTML em chunks de 16KB para melhor performance
+    const chunkSize = 16384;
+    for (let i = 0; i < html.length; i += chunkSize) {
+      yield html.slice(i, i + chunkSize);
+    }
+
+    // Yield estado serializado no final
+    const state = Object.fromEntries(signalRegistry);
+    yield `<script id="__SLASH_STATE__" type="application/json">${JSON.stringify(state)}</script>`;
+  } finally {
+    // Desativar modo SSR
+    globalThis.__SLASH_SSR__ = false;
+    globalThis.__SLASH_TRACK_STATE__ = undefined;
+    globalThis.__SLASH_TRACK_ACCESS__ = undefined;
+    accessedValues.clear();
   }
-
-  // Yield estado serializado no final
-  const state = Object.fromEntries(signalRegistry);
-  yield `<script id="__SLASH_STATE__" type="application/json">${JSON.stringify(state)}</script>`;
-}
-
-// Repeat para SSR: renderiza lista reativa como string
-export function Repeat<T>(
-  listSig: Reactive<T[]>,
-  keyOf: (item: T) => string | number,
-  renderItem: (item: T) => Child,
-): string {
-  const id = captureSignal(listSig);
-  const items = listSig.get();
-
-  const html = items
-    .map((item) => {
-      const key = keyOf(item);
-      const itemHtml = childToString(renderItem(item));
-      return `<!--repeat-item:${id}:${key}-->${itemHtml}<!--/repeat-item-->`;
-    })
-    .join("");
-
-  return `<!--repeat-start:${id}-->${html}<!--repeat-end:${id}-->`;
 }

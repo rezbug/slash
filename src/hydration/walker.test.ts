@@ -33,7 +33,7 @@ describe("Hydration Walker", () => {
       const afterDiv = Array.from(container.childNodes).find(
         n => n.nodeType === Node.ELEMENT_NODE && n.textContent === "After"
       );
-      expect(ctx.cursor).toBe(afterDiv);
+      expect(ctx.cursor).toBe(afterDiv ?? null);
     });
 
     it("deve lidar com signals aninhados", () => {

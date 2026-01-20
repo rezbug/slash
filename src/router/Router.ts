@@ -1,10 +1,6 @@
 import type { Child } from "../types";
 import { router } from "./state";
-
-export type RouterProps = {
-  location?: string;
-  children: () => Child;
-};
+import type { RouterProps } from "./types";
 
 /**
  * Componente Router
@@ -23,7 +19,7 @@ export type RouterProps = {
  *   children: () => Route({ path: '/', component: Home })
  * })
  */
-export function Router(props: RouterProps) {
+export function Router(props: RouterProps): Child {
   // Atualizar estado PRIMEIRO, antes de processar children
   // Se location é fornecida, usar ela (SSR ou teste)
   if (props.location !== undefined) {
@@ -36,8 +32,13 @@ export function Router(props: RouterProps) {
       params: {},
       isNavigating: false,
     });
-  } else if (typeof window !== "undefined") {
-    // CSR Mode: usar window.location inicial
+
+    // SSR: executar children uma vez e retornar (não é reativo)
+    return props.children();
+  }
+
+  // CSR Mode: configurar estado inicial
+  if (typeof window !== "undefined") {
     const pathname = window.location.pathname;
     const search = window.location.search.slice(1); // Remove '?'
 
@@ -49,7 +50,15 @@ export function Router(props: RouterProps) {
     });
   }
 
-  // Executar children DEPOIS de configurar o estado
-  // API imperativa garante ordem de execução consistente em SSR e CSR
-  return props.children();
+  // CSR: retornar uma função que acessa state e automaticamente se inscreve
+  // O sistema de tracking automático detecta router.pathname.get() e router.params.get()
+  // e registra watchers automaticamente
+  return () => {
+    // Acessar pathname e params para criar dependência reativa automática
+    router.pathname.get();
+    router.params.get();
+
+    // Re-executar children quando pathname ou params mudam
+    return props.children();
+  };
 }

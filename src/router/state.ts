@@ -2,8 +2,12 @@ import { createState } from "../state";
 import type { Reactive } from "../types";
 import type { NavigateOptions, RouterState } from "./types";
 
-// Detecta SSR: sem window OU running em Bun test
-const IS_SSR = typeof window === "undefined" || (typeof Bun !== "undefined" && (Bun as any)?.jest);
+declare global {
+  var __SLASH_SSR__: boolean | undefined;
+}
+
+// Detecta SSR: sem window OU flag global __SLASH_SSR__
+const isSSR = () => typeof window === "undefined" || globalThis.__SLASH_SSR__ === true;
 
 const initialState: RouterState = {
   pathname: "/",
@@ -14,28 +18,40 @@ const initialState: RouterState = {
 
 const routerState = createState(initialState);
 
-// Helper reativo para query (URLSearchParams)
-const createQueryReactive = () => {
+// Helper para criar Reactive de uma propriedade específica
+const createPropertyReactive = <K extends keyof RouterState>(
+  key: K
+): Reactive<RouterState[K]> => {
   return {
-    get: () => new URLSearchParams(routerState.search.get()),
+    get: () => routerState.get()[key],
+    subscribe: (fn: (v: RouterState[K]) => void) => {
+      return routerState.watch((state) => fn(state[key]));
+    },
+  };
+};
+
+// Helper reativo para query (URLSearchParams)
+const createQueryReactive = (): Reactive<URLSearchParams> => {
+  return {
+    get: () => new URLSearchParams(routerState.get().search),
     subscribe: (fn: (v: URLSearchParams) => void) => {
-      return routerState.search.subscribe((search) => {
-        fn(new URLSearchParams(search));
+      return routerState.watch((state) => {
+        fn(new URLSearchParams(state.search));
       });
     },
-  } as Reactive<URLSearchParams>;
+  };
 };
 
 export const router = {
-  // Propriedades reativas (Proxy cria Reactive<T> automaticamente)
-  pathname: routerState.pathname as Reactive<string>,
-  params: routerState.params as Reactive<Record<string, string>>,
+  // Propriedades reativas
+  pathname: createPropertyReactive("pathname"),
+  params: createPropertyReactive("params"),
   query: createQueryReactive(),
-  isNavigating: routerState.isNavigating as Reactive<boolean>,
+  isNavigating: createPropertyReactive("isNavigating"),
 
   // Métodos de navegação
   navigate(to: string, options?: NavigateOptions) {
-    if (IS_SSR) {
+    if (isSSR()) {
       // No servidor, apenas atualiza o estado (noop para navegação real)
       return;
     }
@@ -59,13 +75,13 @@ export const router = {
   },
 
   back() {
-    if (!IS_SSR && window.history) {
+    if (!isSSR() && window.history) {
       window.history.back();
     }
   },
 
   forward() {
-    if (!IS_SSR && window.history) {
+    if (!isSSR() && window.history) {
       window.history.forward();
     }
   },
