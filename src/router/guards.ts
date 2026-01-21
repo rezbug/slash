@@ -1,48 +1,61 @@
-import type { GuardResult, RouteGuard } from "./types";
+/**
+ * Navigation guards pipeline
+ */
+
+import type { NavigationGuard, RouteMatch } from "./types"
 
 /**
- * Execute a route guard function
- * @param guard - Guard function to execute
- * @param params - Route parameters
- * @param query - URL search params
- * @returns Promise resolving to boolean (allow/deny) or string (redirect path)
+ * Result of guard execution
  */
-export async function executeGuard<Params extends Record<string, string> = Record<string, string>>(
-  guard: RouteGuard<Params>,
-  params: Params,
-  query: URLSearchParams,
-): Promise<GuardResult> {
-  const result = guard(params, query);
-
-  // Handle async guards
-  if (result instanceof Promise) {
-    return await result;
-  }
-
-  // Handle sync guards
-  return result;
+export interface GuardResult {
+  /** Whether navigation is allowed */
+  allowed: boolean
+  /** Redirect path (if guard returns a string) */
+  redirect?: string
 }
 
 /**
- * Combine multiple guards into a single guard
- * Executes guards in sequence, stops at first failure
- * @param guards - Guard functions to combine
- * @returns Combined guard function
+ * Execute navigation guards in sequence
+ * Stops at the first guard that returns false or a redirect
+ *
+ * @param guards - Array of navigation guards
+ * @param to - Target route
+ * @param from - Current route (null if no current route)
+ * @returns Guard result indicating whether to allow or block navigation
  */
-export function combineGuards<Params extends Record<string, string> = Record<string, string>>(
-  ...guards: RouteGuard<Params>[]
-): RouteGuard<Params> {
-  return async (params: Params, query: URLSearchParams): Promise<GuardResult> => {
-    for (const guard of guards) {
-      const result = await executeGuard(guard, params, query);
+export async function executeGuards(
+  guards: NavigationGuard[],
+  to: RouteMatch,
+  from: RouteMatch | null
+): Promise<GuardResult> {
+  // If no guards, allow navigation
+  if (!guards || guards.length === 0) {
+    return { allowed: true }
+  }
 
-      // Stop at first failure (false or redirect string)
-      if (result !== true) {
-        return result;
+  // Execute guards in order
+  for (const guard of guards) {
+    try {
+      const result = await guard(to, from)
+
+      // Guard returned false - block navigation
+      if (result === false) {
+        return { allowed: false }
       }
-    }
 
-    // All guards passed
-    return true;
-  };
+      // Guard returned a string - redirect
+      if (typeof result === "string") {
+        return { allowed: false, redirect: result }
+      }
+
+      // Guard returned void or true - continue to next guard
+    } catch (error) {
+      // Guard threw an error - block navigation
+      console.error("Navigation guard error:", error)
+      return { allowed: false }
+    }
+  }
+
+  // All guards passed
+  return { allowed: true }
 }

@@ -1,190 +1,309 @@
-import { describe, expect, it } from 'bun:test'
-import { executeGuard, combineGuards } from './guards'
+/**
+ * Guards tests
+ */
 
-describe('guards', () => {
-  describe('executeGuard', () => {
-    it('should return true when guard returns true', async () => {
-      const guard = () => true
-      const result = await executeGuard(guard, {}, new URLSearchParams())
-      expect(result).toBe(true)
-    })
+import { describe, expect, test } from "bun:test"
+import { executeGuards } from "./guards"
+import type { RouteMatch, NavigationGuard } from "./types"
 
-    it('should return false when guard returns false', async () => {
-      const guard = () => false
-      const result = await executeGuard(guard, {}, new URLSearchParams())
-      expect(result).toBe(false)
-    })
+// Helper to create a mock route
+function createMockRoute(path: string): RouteMatch {
+  return {
+    route: { path, component: () => null },
+    params: {},
+    query: {},
+    path,
+    meta: {},
+  }
+}
 
-    it('should return redirect path when guard returns string', async () => {
-      const guard = () => '/login'
-      const result = await executeGuard(guard, {}, new URLSearchParams())
-      expect(result).toBe('/login')
-    })
+describe("executeGuards", () => {
+  test("should allow navigation when no guards", async () => {
+    // Arrange
+    const to = createMockRoute("/dashboard")
+    const from = null
+    const guards: NavigationGuard[] = []
 
-    it('should handle async guard that returns true', async () => {
-      const guard = async () => {
-        await new Promise(resolve => setTimeout(resolve, 10))
-        return true
-      }
-      const result = await executeGuard(guard, {}, new URLSearchParams())
-      expect(result).toBe(true)
-    })
+    // Act
+    const result = await executeGuards(guards, to, from)
 
-    it('should handle async guard that returns false', async () => {
-      const guard = async () => {
-        await new Promise(resolve => setTimeout(resolve, 10))
-        return false
-      }
-      const result = await executeGuard(guard, {}, new URLSearchParams())
-      expect(result).toBe(false)
-    })
-
-    it('should handle async guard that returns redirect path', async () => {
-      const guard = async () => {
-        await new Promise(resolve => setTimeout(resolve, 10))
-        return '/unauthorized'
-      }
-      const result = await executeGuard(guard, {}, new URLSearchParams())
-      expect(result).toBe('/unauthorized')
-    })
-
-    it('should pass params to guard', async () => {
-      const params = { id: '123', slug: 'test' }
-      let receivedParams: Record<string, string> = {}
-
-      const guard = (p: Record<string, string>) => {
-        receivedParams = p
-        return true
-      }
-
-      await executeGuard(guard, params, new URLSearchParams())
-      expect(receivedParams).toEqual(params)
-    })
-
-    it('should pass query to guard', async () => {
-      const query = new URLSearchParams('foo=bar&baz=qux')
-      let receivedQuery: URLSearchParams | null = null
-
-      const guard = (_p: Record<string, string>, q: URLSearchParams) => {
-        receivedQuery = q
-        return true
-      }
-
-      await executeGuard(guard, {}, query)
-      expect(receivedQuery).toEqual(query)
-    })
+    // Assert
+    expect(result.allowed).toBe(true)
+    expect(result.redirect).toBeUndefined()
   })
 
-  describe('combineGuards', () => {
-    it('should return true when all guards return true', async () => {
-      const guard1 = () => true
-      const guard2 = () => true
-      const guard3 = () => true
+  test("should allow navigation when guard returns void", async () => {
+    // Arrange
+    const to = createMockRoute("/dashboard")
+    const from = null
+    const guard: NavigationGuard = () => {
+      // No return (void)
+    }
 
-      const combined = combineGuards(guard1, guard2, guard3)
-      const result = await executeGuard(combined, {}, new URLSearchParams())
-      expect(result).toBe(true)
-    })
+    // Act
+    const result = await executeGuards([guard], to, from)
 
-    it('should return false when first guard returns false', async () => {
-      const guard1 = () => false
-      const guard2 = () => true
-      const guard3 = () => true
+    // Assert
+    expect(result.allowed).toBe(true)
+  })
 
-      const combined = combineGuards(guard1, guard2, guard3)
-      const result = await executeGuard(combined, {}, new URLSearchParams())
-      expect(result).toBe(false)
-    })
+  test("should allow navigation when guard returns true", async () => {
+    // Arrange
+    const to = createMockRoute("/dashboard")
+    const from = null
+    const guard: NavigationGuard = () => true
 
-    it('should return false when middle guard returns false', async () => {
-      const guard1 = () => true
-      const guard2 = () => false
-      const guard3 = () => true
+    // Act
+    const result = await executeGuards([guard], to, from)
 
-      const combined = combineGuards(guard1, guard2, guard3)
-      const result = await executeGuard(combined, {}, new URLSearchParams())
-      expect(result).toBe(false)
-    })
+    // Assert
+    expect(result.allowed).toBe(true)
+  })
 
-    it('should return redirect path from first failing guard', async () => {
-      const guard1 = () => true
-      const guard2 = () => '/login'
-      const guard3 = () => true
+  test("should block navigation when guard returns false", async () => {
+    // Arrange
+    const to = createMockRoute("/admin")
+    const from = null
+    const guard: NavigationGuard = () => false
 
-      const combined = combineGuards(guard1, guard2, guard3)
-      const result = await executeGuard(combined, {}, new URLSearchParams())
-      expect(result).toBe('/login')
-    })
+    // Act
+    const result = await executeGuards([guard], to, from)
 
-    it('should stop execution at first failure', async () => {
-      let guard3Called = false
+    // Assert
+    expect(result.allowed).toBe(false)
+    expect(result.redirect).toBeUndefined()
+  })
 
-      const guard1 = () => true
-      const guard2 = () => false
-      const guard3 = () => {
-        guard3Called = true
-        return true
-      }
+  test("should redirect when guard returns string", async () => {
+    // Arrange
+    const to = createMockRoute("/admin")
+    const from = null
+    const guard: NavigationGuard = () => "/login"
 
-      const combined = combineGuards(guard1, guard2, guard3)
-      await executeGuard(combined, {}, new URLSearchParams())
-      expect(guard3Called).toBe(false)
-    })
+    // Act
+    const result = await executeGuards([guard], to, from)
 
-    it('should handle async guards', async () => {
-      const guard1 = async () => {
-        await new Promise(resolve => setTimeout(resolve, 10))
-        return true
-      }
-      const guard2 = async () => {
-        await new Promise(resolve => setTimeout(resolve, 10))
-        return true
-      }
+    // Assert
+    expect(result.allowed).toBe(false)
+    expect(result.redirect).toBe("/login")
+  })
 
-      const combined = combineGuards(guard1, guard2)
-      const result = await executeGuard(combined, {}, new URLSearchParams())
-      expect(result).toBe(true)
-    })
+  test("should execute multiple guards in order", async () => {
+    // Arrange
+    const to = createMockRoute("/dashboard")
+    const from = null
+    const executionOrder: number[] = []
 
-    it('should handle mix of sync and async guards', async () => {
-      const guard1 = () => true
-      const guard2 = async () => {
-        await new Promise(resolve => setTimeout(resolve, 10))
-        return true
-      }
-      const guard3 = () => true
+    const guard1: NavigationGuard = () => {
+      executionOrder.push(1)
+    }
 
-      const combined = combineGuards(guard1, guard2, guard3)
-      const result = await executeGuard(combined, {}, new URLSearchParams())
-      expect(result).toBe(true)
-    })
+    const guard2: NavigationGuard = () => {
+      executionOrder.push(2)
+    }
 
-    it('should pass params and query to all guards', async () => {
-      const params = { id: '456' }
-      const query = new URLSearchParams('auth=token')
+    const guard3: NavigationGuard = () => {
+      executionOrder.push(3)
+    }
 
-      const receivedParams: Record<string, string>[] = []
-      const receivedQueries: URLSearchParams[] = []
+    // Act
+    const result = await executeGuards([guard1, guard2, guard3], to, from)
 
-      const guard1 = (p: Record<string, string>, q: URLSearchParams) => {
-        receivedParams.push(p)
-        receivedQueries.push(q)
-        return true
-      }
-      const guard2 = (p: Record<string, string>, q: URLSearchParams) => {
-        receivedParams.push(p)
-        receivedQueries.push(q)
-        return true
-      }
+    // Assert
+    expect(result.allowed).toBe(true)
+    expect(executionOrder).toEqual([1, 2, 3])
+  })
 
-      const combined = combineGuards(guard1, guard2)
-      await executeGuard(combined, params, query)
+  test("should stop at first guard that returns false", async () => {
+    // Arrange
+    const to = createMockRoute("/admin")
+    const from = null
+    const executionOrder: number[] = []
 
-      expect(receivedParams).toHaveLength(2)
-      expect(receivedParams[0]).toEqual(params)
-      expect(receivedParams[1]).toEqual(params)
-      expect(receivedQueries[0]).toEqual(query)
-      expect(receivedQueries[1]).toEqual(query)
-    })
+    const guard1: NavigationGuard = () => {
+      executionOrder.push(1)
+    }
+
+    const guard2: NavigationGuard = () => {
+      executionOrder.push(2)
+      return false
+    }
+
+    const guard3: NavigationGuard = () => {
+      executionOrder.push(3)
+    }
+
+    // Act
+    const result = await executeGuards([guard1, guard2, guard3], to, from)
+
+    // Assert
+    expect(result.allowed).toBe(false)
+    expect(executionOrder).toEqual([1, 2]) // guard3 not executed
+  })
+
+  test("should stop at first guard that returns redirect", async () => {
+    // Arrange
+    const to = createMockRoute("/admin")
+    const from = null
+    const executionOrder: number[] = []
+
+    const guard1: NavigationGuard = () => {
+      executionOrder.push(1)
+    }
+
+    const guard2: NavigationGuard = () => {
+      executionOrder.push(2)
+      return "/login"
+    }
+
+    const guard3: NavigationGuard = () => {
+      executionOrder.push(3)
+    }
+
+    // Act
+    const result = await executeGuards([guard1, guard2, guard3], to, from)
+
+    // Assert
+    expect(result.allowed).toBe(false)
+    expect(result.redirect).toBe("/login")
+    expect(executionOrder).toEqual([1, 2]) // guard3 not executed
+  })
+
+  test("should handle async guards", async () => {
+    // Arrange
+    const to = createMockRoute("/dashboard")
+    const from = null
+
+    const asyncGuard: NavigationGuard = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return true
+    }
+
+    // Act
+    const result = await executeGuards([asyncGuard], to, from)
+
+    // Assert
+    expect(result.allowed).toBe(true)
+  })
+
+  test("should block navigation when async guard returns false", async () => {
+    // Arrange
+    const to = createMockRoute("/admin")
+    const from = null
+
+    const asyncGuard: NavigationGuard = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return false
+    }
+
+    // Act
+    const result = await executeGuards([asyncGuard], to, from)
+
+    // Assert
+    expect(result.allowed).toBe(false)
+  })
+
+  test("should redirect when async guard returns string", async () => {
+    // Arrange
+    const to = createMockRoute("/admin")
+    const from = null
+
+    const asyncGuard: NavigationGuard = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return "/login"
+    }
+
+    // Act
+    const result = await executeGuards([asyncGuard], to, from)
+
+    // Assert
+    expect(result.allowed).toBe(false)
+    expect(result.redirect).toBe("/login")
+  })
+
+  test("should block navigation when guard throws error", async () => {
+    // Arrange
+    const to = createMockRoute("/dashboard")
+    const from = null
+
+    const errorGuard: NavigationGuard = () => {
+      throw new Error("Guard error")
+    }
+
+    // Suppress console.error for this test
+    const originalError = console.error
+    console.error = () => {}
+
+    // Act
+    const result = await executeGuards([errorGuard], to, from)
+
+    // Restore console.error
+    console.error = originalError
+
+    // Assert
+    expect(result.allowed).toBe(false)
+  })
+
+  test("should block navigation when async guard throws error", async () => {
+    // Arrange
+    const to = createMockRoute("/dashboard")
+    const from = null
+
+    const asyncErrorGuard: NavigationGuard = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      throw new Error("Async guard error")
+    }
+
+    // Suppress console.error for this test
+    const originalError = console.error
+    console.error = () => {}
+
+    // Act
+    const result = await executeGuards([asyncErrorGuard], to, from)
+
+    // Restore console.error
+    console.error = originalError
+
+    // Assert
+    expect(result.allowed).toBe(false)
+  })
+
+  test("should pass correct to and from parameters to guard", async () => {
+    // Arrange
+    const to = createMockRoute("/dashboard")
+    const from = createMockRoute("/home")
+
+    let capturedTo: RouteMatch | null = null
+    let capturedFrom: RouteMatch | null = null
+
+    const guard: NavigationGuard = (toRoute, fromRoute) => {
+      capturedTo = toRoute
+      capturedFrom = fromRoute
+    }
+
+    // Act
+    await executeGuards([guard], to, from)
+
+    // Assert
+    expect(capturedTo).toEqual(to)
+    expect(capturedFrom).toEqual(from)
+  })
+
+  test("should handle null from parameter", async () => {
+    // Arrange
+    const to = createMockRoute("/dashboard")
+    const from = null
+
+    let capturedFrom: RouteMatch | null = null
+
+    const guard: NavigationGuard = (_, fromRoute) => {
+      capturedFrom = fromRoute
+    }
+
+    // Act
+    await executeGuards([guard], to, from)
+
+    // Assert
+    expect(capturedFrom).toBeNull()
   })
 })

@@ -3,6 +3,12 @@ import type { Elementish, Props, Reactive } from "../types";
 import { isReactive } from "../utils/guards";
 import { processClassValue } from "../utils/helpers";
 import { parseEventProp } from "./events";
+import {
+  computePropUpdate,
+  applyPropUpdate,
+  getElementType,
+  hasNativeProperty,
+} from "./props-core";
 
 export function applyClass(element: Element, val: unknown): void {
   if (element instanceof HTMLElement) {
@@ -16,55 +22,15 @@ export function applyClass(element: Element, val: unknown): void {
 }
 
 export function setPropReactive(element: Element, key: string, sig: Reactive<unknown>): void {
+  // FCIS: Função de aplicação que usa Functional Core
   const apply = (val: unknown) => {
-    if (key === "class" || key === "className") {
-      applyClass(element, val);
-      return;
-    }
+    // Functional Core: decide o que fazer (sem side effects)
+    const elementType = getElementType(element as Elementish);
+    const hasProp = hasNativeProperty(element as Elementish, key);
+    const update = computePropUpdate(elementType, key, val, hasProp);
 
-    if (key === "style" && val && typeof val === "object") {
-      Object.assign((element as HTMLElement).style, val as Record<string, unknown>);
-      return;
-    }
-
-    if (key === "value") {
-      const ctl = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-      const next = val == null ? "" : String(val);
-
-      if (ctl.value !== next) ctl.value = next;
-
-      if ("defaultValue" in ctl) {
-        const t = ctl as HTMLInputElement | HTMLTextAreaElement;
-        if (t.defaultValue !== next) t.defaultValue = next;
-      }
-
-      if (ctl instanceof HTMLSelectElement) {
-        for (const opt of Array.from(ctl.options)) {
-          opt.selected = opt.value === next;
-        }
-      }
-      return;
-    }
-
-    if (key === "checked") {
-      const box = element as HTMLInputElement;
-      const next = Boolean(val);
-      if (box.checked !== next) box.checked = next;
-      if (box.defaultChecked !== next) box.defaultChecked = next;
-      return;
-    }
-
-    // propriedade direta se existir; senão atributo
-    if (key in element) {
-      const ok = Reflect.set(element as object, key, val);
-      if (!ok) {
-        if (val == null || val === false) element.removeAttribute(key);
-        else element.setAttribute(key, String(val));
-      }
-    } else {
-      if (val == null || val === false) element.removeAttribute(key);
-      else element.setAttribute(key, String(val));
-    }
+    // Imperative Shell: executa o comando (com side effects)
+    applyPropUpdate(element as Elementish, update);
   };
 
   apply(sig.get());
@@ -73,15 +39,16 @@ export function setPropReactive(element: Element, key: string, sig: Reactive<unk
 }
 
 export function setProp(element: Elementish, key: string, val: unknown): void {
+  // 1) NO_OP: ignora children
   if (key === "children") return;
 
-  // 1) Signals primeiro: converte para prop reativo
+  // 2) Signals: converte para prop reativo
   if (isReactive(val)) {
     setPropReactive(element, key, val);
     return;
   }
 
-  // 2) Eventos: onClick / onInput / onChange / ...
+  // 3) Eventos: onClick / onInput / onChange / ...
   if (key.startsWith("on") && key[2] === key[2]?.toUpperCase()) {
     const type = key.slice(2).toLowerCase();
     const parsed = parseEventProp(val);
@@ -92,53 +59,12 @@ export function setProp(element: Elementish, key: string, val: unknown): void {
     return;
   }
 
-  // 3) Estilo por objeto
-  if (key === "style" && val && typeof val === "object") {
-    Object.assign((element as HTMLElement).style, val as Record<string, unknown>);
-    return;
-  }
+  // 4) FCIS Pattern: Functional Core + Imperative Shell
+  // Functional Core: decide o que fazer (sem side effects)
+  const elementType = getElementType(element);
+  const hasProp = hasNativeProperty(element, key);
+  const update = computePropUpdate(elementType, key, val, hasProp);
 
-  // 4) Classes
-  if (key === "class" || key === "className") {
-    applyClass(element, val);
-    return;
-  }
-
-  // 5) Inputs/textarea/select controlados (setup inicial mesmo sem signal)
-  if (key === "value") {
-    const ctl = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-    const next = val == null ? "" : String(val);
-
-    if (ctl.value !== next) ctl.value = next;
-    if ("defaultValue" in ctl) {
-      const t = ctl as HTMLInputElement | HTMLTextAreaElement;
-      if (t.defaultValue !== next) t.defaultValue = next;
-    }
-    if (ctl instanceof HTMLSelectElement) {
-      for (const opt of Array.from(ctl.options)) {
-        opt.selected = opt.value === next;
-      }
-    }
-    return;
-  }
-
-  if (key === "checked") {
-    const box = element as HTMLInputElement;
-    const next = Boolean(val);
-    if (box.checked !== next) box.checked = next;
-    if (box.defaultChecked !== next) box.defaultChecked = next;
-    return;
-  }
-
-  // 6) Propriedade direta ou atributo
-  if (key in element) {
-    const ok = Reflect.set(element as object, key, val);
-    if (!ok) {
-      if (val == null || val === false) element.removeAttribute(key);
-      else element.setAttribute(key, String(val));
-    }
-  } else {
-    if (val == null || val === false) element.removeAttribute(key);
-    else element.setAttribute(key, String(val));
-  }
+  // Imperative Shell: executa o comando (com side effects)
+  applyPropUpdate(element, update);
 }

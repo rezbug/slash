@@ -1,114 +1,203 @@
-import type { Reactive } from "./types";
+/**
+ * State Management - FCIS Pattern (Functional Core, Imperative Shell)
+ *
+ * Arquitetura:
+ * - state-core.ts: Functional Core (funções puras, decisões)
+ * - state.ts: Imperative Shell (side effects, execução)
+ * - state-history.ts: Time-travel debugging (opcional)
+ */
 
-export type State<T> = {
-  get(): T;
-  set(payload: T | ((prev: T) => T)): void;
-  watch(callback: (payload: T) => void): () => void;
-  subscribe(fn: (v: T) => void): () => void;
+import {
+  deepClone,
+  computeStateUpdate,
+  applyStateCommand,
+  shouldNotifyWatchers
+} from './state-core'
+import type { StateHistory } from './state-history'
+import { createHistory, addToHistory, clearHistory as clearHistoryCore } from './state-history'
+import { isInBatch, __recordBatchUpdate, __addBatchEndCallback } from './batch'
+
+export type State<T = unknown> = object & T;
+
+export type StateWatcher<T> = (params: T) => void;
+
+export type StateManager<T = unknown> = {
+  set: (value: State<T>) => void;
+  get: () => State<T>;
+  watch: (callback: StateWatcher<T>) => () => void;
+  // Time-travel debugging (opcional, não-breaking)
+  getHistory?: () => Readonly<StateHistory<T>>;
+  clearHistory?: () => void;
 };
 
-// Reactive estendido com map para arrays
-export type ReactiveArray<T> = Reactive<T[]> & {
-  map<R>(mapper: (item: T, index: number) => R): Reactive<R[]>;
-};
-
-// Tipo que mapeia cada propriedade de T para Reactive<T[key]>
-type ReactiveProps<T> = {
-  [K in keyof T]: T[K] extends Array<infer U> ? ReactiveArray<U> : Reactive<T[K]>;
-};
-
-export function createState<T extends object>(initialState: T): State<T> & ReactiveProps<T> {
-  let state = deepClone(initialState);
-  const watchers = new Set<(payload: T) => void>();
-
-  const stateObj = {
-    set: (payload: T | ((prev: T) => T)) => {
-      const next = typeof payload === "function" ? (payload as (prev: T) => T)(state) : payload;
-      if (isEqual(next, state)) return;
-      state = deepClone(next);
-      watchers.forEach((fn) => fn(state));
-    },
-    get: () => deepClone(state),
-    watch: (callback: (payload: T) => void) => {
-      watchers.add(callback);
-      return () => watchers.delete(callback);
-    },
-    subscribe: (fn: (v: T) => void) => {
-      watchers.add(fn);
-      return () => watchers.delete(fn);
-    },
-  };
-
-  // Proxy para acesso direto: counter.count
-  return new Proxy(stateObj, {
-    get(target, prop) {
-      // Métodos do State
-      if (prop in target) {
-        return target[prop as keyof typeof target];
-      }
-      // Propriedades do estado - retorna Reactive
-      if (prop in state) {
-        return createDerivedProperty(target, prop as keyof T);
-      }
-      return undefined;
-    },
-  }) as State<T> & ReactiveProps<T>;
+export interface StateOptions {
+  /** Habilita time-travel debugging (histórico de comandos) */
+  enableHistory?: boolean;
+  /** Tamanho máximo do histórico (padrão: 100) */
+  historyMaxSize?: number;
 }
 
-function deepClone<T>(obj: T): T {
-  if (typeof structuredClone === "function") {
-    return structuredClone(obj);
-  }
-  return JSON.parse(JSON.stringify(obj)) as T;
-}
+/**
+ * IMPERATIVE SHELL: Gerencia side effects e mutações
+ */
+export const createState = <S = unknown>(
+  initialState: State<S>,
+  options?: StateOptions
+): StateManager<S> => {
+  // Estado interno mutável (encapsulado)
+  let _state = deepClone(initialState);
+  const _watchers = new Set<StateWatcher<S>>();
 
-function isEqual<T>(a: T, b: T): boolean {
-  if (Object.is(a, b)) return true;
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
-    return false;
-  }
+  // Histórico opcional (time-travel debugging)
+  let _history: StateHistory<S> | null = options?.enableHistory
+    ? createHistory(options.historyMaxSize ?? 100)
+    : null;
 
-  const keysA = Object.keys(a as object);
-  const keysB = Object.keys(b as object);
-
-  if (keysA.length !== keysB.length) return false;
-
-  for (const key of keysA) {
-    if (!isEqual((a as any)[key], (b as any)[key])) {
-      return false;
+  /**
+   * Side effect: Notifica todos os watchers
+   */
+  const _notifyHandlers = (payload: State<S>) => {
+    for (const stateWatcher of _watchers) {
+      stateWatcher(payload);
     }
-  }
-
-  return true;
-}
-
-// Cria um "signal" para cada propriedade acessada
-function createDerivedProperty<T, K extends keyof T>(
-  parent: { get(): T; subscribe(fn: (v: T) => void): () => void },
-  key: K,
-) {
-  const reactive = {
-    get: () => parent.get()[key],
-    subscribe: (fn: (v: T[K]) => void) => {
-      return parent.subscribe((fullState) => fn(fullState[key]));
-    },
   };
 
-  // Se for um array, adiciona o método map
-  const value = parent.get()[key];
-  if (Array.isArray(value)) {
-    return {
-      ...reactive,
-      map: <R>(mapper: (item: any, index: number) => R): Reactive<R[]> => {
-        return {
-          get: () => (reactive.get() as any[]).map(mapper),
-          subscribe: (fn: (v: R[]) => void) => {
-            return reactive.subscribe((arr) => fn((arr as any[]).map(mapper)));
-          },
-        };
-      },
+  /**
+   * SHELL: Orquestra functional core + side effects
+   */
+  const set = (payload: State<S>) => {
+    // 1. FUNCTIONAL CORE: Computar comando (puro)
+    const command = computeStateUpdate(_state, payload);
+
+    // 2. FUNCTIONAL CORE: Aplicar comando (puro)
+    const newState = applyStateCommand(_state, command);
+
+    // 3. IMPERATIVE SHELL: Mutação do estado interno
+    _state = newState;
+
+    // 4. IMPERATIVE SHELL: Adicionar ao histórico (se habilitado)
+    if (_history !== null) {
+      _history = addToHistory(_history, command, deepClone(_state));
+    }
+
+    // 5. FUNCTIONAL CORE: Decidir se deve notificar (puro)
+    if (shouldNotifyWatchers(command)) {
+      // 6. BATCH: Registrar update se em modo batch
+      if (isInBatch()) {
+        __recordBatchUpdate();
+      } else {
+        // 7. IMPERATIVE SHELL: Side effect de notificação (fora de batch)
+        _notifyHandlers(deepClone(_state));
+      }
+    }
+  };
+
+  /**
+   * SHELL: Retorna clone do estado + side effects de tracking
+   */
+  const get = (): State<S> => {
+    // Side effect: Notificar sistema de rastreamento de componentes (se existir)
+    if (typeof globalThis !== "undefined" && (globalThis as any).__SLASH_TRACK_STATE__) {
+      (globalThis as any).__SLASH_TRACK_STATE__(stateManager);
+    }
+
+    const cloned = deepClone(_state);
+
+    // Em SSR, criar Proxy para rastrear acessos a propriedades
+    if (typeof globalThis !== "undefined" && (globalThis as any).__SLASH_SSR__ && typeof cloned === 'object' && cloned !== null) {
+      const handler: ProxyHandler<any> = {
+        get(target, prop) {
+          let value = target[prop];
+
+          // Se o valor é um array, criar Proxy para interceptar métodos como .map()
+          if (Array.isArray(value)) {
+            const arrayHandler: ProxyHandler<any[]> = {
+              get(arrTarget, arrProp) {
+                const arrValue = arrTarget[arrProp as any];
+
+                // Interceptar métodos que retornam novos arrays
+                if (arrProp === 'map' || arrProp === 'filter' || arrProp === 'slice') {
+                  return function(...args: any[]) {
+                    const result = (arrValue as Function).apply(arrTarget, args);
+                    // Side effect: Rastrear o resultado do método
+                    if ((globalThis as any).__SLASH_TRACK_ACCESS__) {
+                      (globalThis as any).__SLASH_TRACK_ACCESS__(stateManager, arrProp, result);
+                    }
+                    return result;
+                  };
+                }
+
+                return arrValue;
+              }
+            };
+            const arrayProxy = new Proxy(value, arrayHandler);
+
+            // Side effect: Notificar sobre acesso ao array (agora com Proxy)
+            if ((globalThis as any).__SLASH_TRACK_ACCESS__) {
+              (globalThis as any).__SLASH_TRACK_ACCESS__(stateManager, prop, arrayProxy);
+            }
+
+            return arrayProxy;
+          }
+
+          // Side effect: Notificar sistema de rastreamento sobre acesso específico
+          if ((globalThis as any).__SLASH_TRACK_ACCESS__) {
+            (globalThis as any).__SLASH_TRACK_ACCESS__(stateManager, prop, value);
+          }
+
+          return value;
+        }
+      };
+      return new Proxy(cloned, handler);
+    }
+
+    return cloned;
+  };
+
+  /**
+   * SHELL: Registra watcher (side effect)
+   */
+  const watch = (callback: StateWatcher<S>): (() => void) => {
+    _watchers.add(callback);
+
+    // Retornar função de unwatch (cleanup side effect)
+    return () => {
+      _watchers.delete(callback);
     };
+  };
+
+  /**
+   * SHELL: Obtém histórico (se habilitado)
+   */
+  const getHistory = (): Readonly<StateHistory<S>> => {
+    if (_history === null) {
+      throw new Error('History not enabled. Create state with { enableHistory: true }');
+    }
+    return _history;
+  };
+
+  /**
+   * SHELL: Limpa histórico (se habilitado)
+   */
+  const clearHistory = (): void => {
+    if (_history === null) {
+      throw new Error('History not enabled. Create state with { enableHistory: true }');
+    }
+    _history = clearHistoryCore(_history);
+  };
+
+  const stateManager: StateManager<S> = { set, get, watch };
+
+  // Adicionar métodos opcionais se histórico habilitado
+  if (_history !== null) {
+    stateManager.getHistory = getHistory;
+    stateManager.clearHistory = clearHistory;
   }
 
-  return reactive;
-}
+  // BATCH: Registrar callback para notificar watchers ao finalizar batch
+  __addBatchEndCallback(() => {
+    _notifyHandlers(deepClone(_state));
+  });
+
+  return stateManager;
+};

@@ -75,9 +75,9 @@ export function ErrorBoundary(props: ErrorBoundaryProps): Child {
 }
 
 /**
- * Hook para capturar erros assíncronos em componentes
+ * Wrapper para capturar erros assíncronos em componentes
  */
-export function useSafeAsync<T>(
+export function catchAsync<T>(
   fn: () => Promise<T>,
   onError?: (error: Error) => void,
 ): [() => Promise<T | null>, () => Error | null] {

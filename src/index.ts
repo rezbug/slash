@@ -5,36 +5,24 @@ export {
   ErrorBoundary,
   safeRender,
   setupGlobalErrorHandler,
-  useSafeAsync,
+  catchAsync,
 } from "./error-boundary";
 export * from "./forms";
-export { destroyNode, h, html, html as tsx, html as jsx, Repeat, render } from "./hyper";
-export { mapReactive } from "./utils/helpers";
-export type {
-  LinkProps,
-  NavigateOptions,
-  ParseParams,
-  RouteMatch,
-  RoutePattern,
-  RouteProps,
-  RouterProps,
-  RouterState,
-} from "./router";
-// Router exports
-export {
-  Link,
-  matchRoute,
-  parseParams,
-  parseQuery,
-  Route,
-  Router,
-  rankRoutes,
-  router,
-  stringifyQuery,
-} from "./router";
+export { destroyNode, h, html, html as tsx, html as jsx, render } from "./hyper";
+export * from "./router";
 // SSR exports
-export { htmlString, renderToStream, renderToString, Repeat as RepeatString } from "./server-render";
+export { htmlString, renderToStream, renderToString } from "./server-render";
 export { createState } from "./state";
+export { batch } from "./batch";
+
+// Developer Experience - Warnings & Error Messages (optional, for advanced debugging)
+export {
+  setDevMode,
+  setWarningsEnabled,
+  setErrorsThrow,
+  isDevMode,
+  isWarningsEnabled,
+} from "./dev-warnings";
 
 // Reexporte TIPOS num único lugar (DX + sem ciclos)
 export type {

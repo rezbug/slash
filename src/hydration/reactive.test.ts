@@ -18,13 +18,14 @@ describe("Hydration Signals", () => {
       const element = document.createElement("input");
       element.setAttribute("data-reactive-value", "signal1");
 
-      let subscriber: ((value: unknown) => void) | null = null;
+      let subscriber: ((value: string) => void) | null = null;
       const signal: Reactive<string> = {
-        subscribe: (fn) => {
+        get: () => "",
+        subscribe: (fn: (value: string) => void) => {
           subscriber = fn;
           return () => {};
         },
-      } as any;
+      };
 
       const signals = new Map([["signal1", signal]]);
       hydrateReactiveAttributes(element, signals);
@@ -33,7 +34,7 @@ describe("Hydration Signals", () => {
       expect(element.hasAttribute("data-reactive-value")).toBe(false);
 
       // Atualizar signal deve atualizar o valor
-      subscriber?.("test value");
+      subscriber!("test value");
       expect((element as HTMLInputElement).value).toBe("test value");
     });
 
@@ -42,21 +43,22 @@ describe("Hydration Signals", () => {
       element.type = "checkbox";
       element.setAttribute("data-reactive-checked", "signal2");
 
-      let subscriber: ((value: unknown) => void) | null = null;
+      let subscriber: ((value: boolean) => void) | null = null;
       const signal: Reactive<boolean> = {
-        subscribe: (fn) => {
+        get: () => false,
+        subscribe: (fn: (value: boolean) => void) => {
           subscriber = fn;
           return () => {};
         },
-      } as any;
+      };
 
       const signals = new Map([["signal2", signal]]);
       hydrateReactiveAttributes(element, signals);
 
-      subscriber?.(true);
+      subscriber!(true);
       expect((element as HTMLInputElement).checked).toBe(true);
 
-      subscriber?.(false);
+      subscriber!(false);
       expect((element as HTMLInputElement).checked).toBe(false);
     });
 
@@ -64,18 +66,19 @@ describe("Hydration Signals", () => {
       const element = document.createElement("div");
       element.setAttribute("data-reactive-class", "signal3");
 
-      let subscriber: ((value: unknown) => void) | null = null;
+      let subscriber: ((value: string) => void) | null = null;
       const signal: Reactive<string> = {
-        subscribe: (fn) => {
+        get: () => "",
+        subscribe: (fn: (value: string) => void) => {
           subscriber = fn;
           return () => {};
         },
-      } as any;
+      };
 
       const signals = new Map([["signal3", signal]]);
       hydrateReactiveAttributes(element, signals);
 
-      subscriber?.("active highlight");
+      subscriber!("active highlight");
       expect(element.className).toBe("active highlight");
     });
 
@@ -83,18 +86,19 @@ describe("Hydration Signals", () => {
       const element = document.createElement("div");
       element.setAttribute("data-reactive-title", "signal4");
 
-      let subscriber: ((value: unknown) => void) | null = null;
+      let subscriber: ((value: string) => void) | null = null;
       const signal: Reactive<string> = {
-        subscribe: (fn) => {
+        get: () => "",
+        subscribe: (fn: (value: string) => void) => {
           subscriber = fn;
           return () => {};
         },
-      } as any;
+      };
 
       const signals = new Map([["signal4", signal]]);
       hydrateReactiveAttributes(element, signals);
 
-      subscriber?.("My Title");
+      subscriber!("My Title");
       expect(element.getAttribute("title")).toBe("My Title");
     });
 
@@ -118,19 +122,20 @@ describe("Hydration Signals", () => {
         <!--reactive-end:sig1-->
       `;
 
-      let subscriber: ((value: unknown) => void) | null = null;
+      let subscriber: ((value: string) => void) | null = null;
       const signal: Reactive<string> = {
-        subscribe: (fn) => {
+        get: () => "Initial",
+        subscribe: (fn: (value: string) => void) => {
           subscriber = fn;
           fn("Initial");
           return () => {};
         },
-      } as any;
+      };
 
       const signals = new Map([["sig1", signal]]);
       hydrateReactiveNodes(container, signals);
 
-      subscriber?.("New Text");
+      subscriber!("New Text");
 
       const textContent = Array.from(container.childNodes)
         .filter((n) => n.nodeType === Node.TEXT_NODE)
@@ -148,18 +153,19 @@ describe("Hydration Signals", () => {
         <!--reactive-end:sig2-->
       `;
 
-      let subscriber: ((value: unknown) => void) | null = null;
+      let subscriber: ((value: string | null) => void) | null = null;
       const signal: Reactive<string | null> = {
-        subscribe: (fn) => {
+        get: () => "Old",
+        subscribe: (fn: (value: string | null) => void) => {
           subscriber = fn;
           return () => {};
         },
-      } as any;
+      };
 
       const signals = new Map([["sig2", signal]]);
       hydrateReactiveNodes(container, signals);
 
-      subscriber?.(null);
+      subscriber!(null);
 
       const textNodes = Array.from(container.childNodes).filter(
         (n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim()
@@ -174,18 +180,19 @@ describe("Hydration Signals", () => {
         <!--reactive-end:sig3-->
       `;
 
-      let subscriber: ((value: unknown) => void) | null = null;
+      let subscriber: ((value: string[] | any) => void) | null = null;
       const signal: Reactive<string[]> = {
-        subscribe: (fn) => {
-          subscriber = fn;
+        get: () => [],
+        subscribe: (fn: (value: string[]) => void) => {
+          subscriber = fn as any;
           return () => {};
         },
-      } as any;
+      };
 
       const signals = new Map([["sig3", signal]]);
       hydrateReactiveNodes(container, signals);
 
-      subscriber?.(["a", "b", "c"]);
+      subscriber!(["a", "b", "c"]);
 
       const textContent = Array.from(container.childNodes)
         .filter((n) => n.nodeType === Node.TEXT_NODE)
@@ -203,20 +210,21 @@ describe("Hydration Signals", () => {
         <!--reactive-end:sig4-->
       `;
 
-      let subscriber: ((value: unknown) => void) | null = null;
+      let subscriber: ((value: Node) => void) | null = null;
       const signal: Reactive<Node> = {
-        subscribe: (fn) => {
+        get: () => document.createTextNode(""),
+        subscribe: (fn: (value: Node) => void) => {
           subscriber = fn;
           return () => {};
         },
-      } as any;
+      };
 
       const signals = new Map([["sig4", signal]]);
       hydrateReactiveNodes(container, signals);
 
       const span = document.createElement("span");
       span.textContent = "Dynamic Element";
-      subscriber?.(span);
+      subscriber!(span);
 
       expect(container.querySelector("span")).not.toBeNull();
       expect(container.textContent).toContain("Dynamic Element");
@@ -233,13 +241,14 @@ describe("Hydration Signals", () => {
         </div>
       `;
 
-      const subscribers: Array<(value: unknown) => void> = [];
+      const subscribers: Array<(value: string) => void> = [];
       const createSignal = (): Reactive<string> => ({
-        subscribe: (fn) => {
+        get: () => "",
+        subscribe: (fn: (value: string) => void) => {
           subscribers.push(fn);
           return () => {};
         },
-      } as any);
+      });
 
       const signals = new Map([
         ["sig1", createSignal()],

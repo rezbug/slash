@@ -7,7 +7,6 @@ export { getHydrateContext, setHydrateContext } from "./hydration/context";
 export { destroyNode } from "./lifecycle/cleanup";
 export type { RenderContainer, RootView } from "./rendering/render";
 export { render } from "./rendering/render";
-export { Repeat } from "./rendering/repeat";
 
 import { getHydrateContext } from "./hydration/context";
 import { hHydrate } from "./hydration/walker";

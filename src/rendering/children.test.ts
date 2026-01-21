@@ -30,7 +30,7 @@ describe("rendering/children", () => {
       expect(parent.children[0]).toBe(child);
     });
 
-    it("clona DocumentFragment", () => {
+    it("consome DocumentFragment (não clona)", () => {
       const parent = document.createElement("div");
       const frag = document.createDocumentFragment();
       const span = document.createElement("span");
@@ -38,11 +38,11 @@ describe("rendering/children", () => {
 
       appendNodeSafe(parent, frag);
       expect(parent.children.length).toBe(1);
-      // Fragment foi clonado, então original ainda tem o span
-      expect(frag.childNodes.length).toBe(1);
+      // Fragment foi consumido, então original está vazio
+      expect(frag.childNodes.length).toBe(0);
     });
 
-    it("clona node que já tem parent diferente", () => {
+    it("move node de parent diferente (preserva event listeners)", () => {
       const parent1 = document.createElement("div");
       const parent2 = document.createElement("div");
       const child = document.createElement("span");
@@ -50,9 +50,10 @@ describe("rendering/children", () => {
       parent1.appendChild(child);
       appendNodeSafe(parent2, child);
 
-      expect(parent1.children.length).toBe(1);
+      // Node foi movido, não clonado
+      expect(parent1.children.length).toBe(0);
       expect(parent2.children.length).toBe(1);
-      expect(parent2.children[0]).not.toBe(child);
+      expect(parent2.children[0]).toBe(child);
     });
   });
 
