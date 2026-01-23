@@ -1,5 +1,5 @@
 {
-  "name": "@seu-escopo/slash",
+  "name": "@ezbug/slash",
   "version": "1.0.0",
   "exports": {
     ".": "./src/index.ts",

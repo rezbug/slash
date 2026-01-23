@@ -1,5 +1,5 @@
 {
-  "name": "slash",
+  "name": "@ezbug/slash",
   "version": "0.2.0",
   "description": "htm + hyper + reactive signals (no VDOM) — tiny, fast, DX-first",
   "license": "MIT",
