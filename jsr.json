@@ -1,11 +1,9 @@
 {
-  "name": "@seu-escopo/slash",
-  "version": "1.0.0",
+  "name": "@slash/slash",
+  "version": "0.2.0",
   "exports": {
     ".": "./src/index.ts",
-    "./html": "./src/hyper.ts",
-    "./signals": "./src/signals.ts",
-    "./components": "./src/components.ts"
+    "./html": "./src/hyper.ts"
   }
 }
 
