@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from "bun:test";
 import { createState } from "../state";
-import type { StateManager } from "../state";
+import type { State } from "../state";
 import {
   createStateTracker,
   trackState,

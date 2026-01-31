@@ -1,10 +1,10 @@
 import { addCleanup, destroyNode } from "../lifecycle/cleanup";
-import type { StateManager } from "../state";
+import type { State } from "../state";
 import type { Child } from "../types";
 import { appendChildSmart } from "./children";
 
 type ComponentContext = {
-  accessedStates: Set<StateManager<any>>;
+  accessedStates: Set<State<any>>;
   isTracking: boolean;
 };
 
@@ -14,7 +14,7 @@ let activeContext: ComponentContext | null = null;
 /**
  * Registra acesso a um state durante renderização de componente
  */
-export function trackStateAccess(state: StateManager<any>): void {
+export function trackStateAccess(state: State<any>): void {
   if (activeContext && activeContext.isTracking) {
     activeContext.accessedStates.add(state);
   }
@@ -108,9 +108,9 @@ export function renderComponent(
 }
 
 /**
- * Cria um StateManager que notifica automaticamente o sistema de rastreamento
+ * Cria um State que notifica automaticamente o sistema de rastreamento
  */
-export function createTrackedState<T>(initialState: T): StateManager<T> & {
+export function createTrackedState<T>(initialState: T): State<T> & {
   _isTracked: boolean;
 } {
   const state = {
@@ -142,5 +142,5 @@ export function createTrackedState<T>(initialState: T): StateManager<T> & {
     },
   };
 
-  return state as StateManager<T> & { _isTracked: boolean };
+  return state as State<T> & { _isTracked: boolean };
 }
