@@ -13,6 +13,7 @@ export * from "./router";
 // SSR exports
 export { htmlString, renderToStream, renderToString } from "./server-render";
 export { createState } from "./state";
+export type { State } from "./state";
 export { batch } from "./batch";
 
 // Developer Experience - Warnings & Error Messages (optional, for advanced debugging)
@@ -41,7 +42,6 @@ export type {
   Reactive,
   Renderer,
   RenderMode,
-  State,
   StreamChunk,
   UniversalRenderOptions,
 } from "./types";

@@ -3,14 +3,6 @@ export type Key = string | number | symbol;
 
 export type Elementish = HTMLElement | SVGElement;
 
-// State API (nova API reativa)
-export type State<T> = {
-  get(): T;
-  set(payload: T | ((prev: T) => T)): void;
-  watch(callback: (payload: T) => void): () => void;
-  subscribe(fn: (v: T) => void): () => void;
-};
-
 // Reactive (duck type para objetos reativos - renomeado de SignalLike)
 export type Reactive<T = unknown> = {
   get(): T;

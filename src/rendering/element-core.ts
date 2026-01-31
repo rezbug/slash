@@ -5,7 +5,7 @@
  * Following FCIS pattern: decisions are pure, execution is imperative.
  */
 
-import type { StateManager } from "../state";
+import type { State } from "../state";
 
 // ============================================================================
 // Types
@@ -16,7 +16,7 @@ import type { StateManager } from "../state";
  * Encapsula o estado de tracking de forma imutável.
  */
 export interface StateTracker {
-  readonly states: ReadonlySet<StateManager<any>>;
+  readonly states: ReadonlySet<State<any>>;
   readonly isTracking: boolean;
 }
 
@@ -24,7 +24,7 @@ export interface StateTracker {
  * Comandos que podem ser emitidos pelo tracking system.
  */
 export type TrackingCommand =
-  | { type: "TRACK_STATE"; state: StateManager<any> }
+  | { type: "TRACK_STATE"; state: State<any> }
   | { type: "START_TRACKING" }
   | { type: "STOP_TRACKING" }
   | { type: "CLEAR_TRACKING" }
@@ -48,7 +48,7 @@ export interface TrackingResult {
  */
 export function createStateTracker(): StateTracker {
   return {
-    states: new Set<StateManager<any>>(),
+    states: new Set<State<any>>(),
     isTracking: false,
   };
 }
@@ -61,7 +61,7 @@ export function createStateTracker(): StateTracker {
  */
 export function trackState(
   tracker: StateTracker,
-  state: StateManager<any>
+  state: State<any>
 ): StateTracker {
   if (!tracker.isTracking) {
     return tracker;
@@ -126,7 +126,7 @@ export function clearTrackedStates(tracker: StateTracker): StateTracker {
 
   return {
     ...tracker,
-    states: new Set<StateManager<any>>(),
+    states: new Set<State<any>>(),
   };
 }
 
@@ -137,7 +137,7 @@ export function clearTrackedStates(tracker: StateTracker): StateTracker {
  */
 export function getTrackedStates(
   tracker: StateTracker
-): ReadonlyArray<StateManager<any>> {
+): ReadonlyArray<State<any>> {
   return Array.from(tracker.states);
 }
 
@@ -158,7 +158,7 @@ export function hasTrackedStates(tracker: StateTracker): boolean {
  */
 export function isStateTracked(
   tracker: StateTracker,
-  state: StateManager<any>
+  state: State<any>
 ): boolean {
   return tracker.states.has(state);
 }
@@ -175,7 +175,7 @@ export function isStateTracked(
 export function computeTrackingCommand(
   tracker: StateTracker,
   operation: "track" | "start" | "stop" | "clear",
-  state?: StateManager<any>
+  state?: State<any>
 ): TrackingCommand {
   switch (operation) {
     case "track":

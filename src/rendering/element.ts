@@ -1,5 +1,5 @@
 import { addCleanup, destroyNode } from "../lifecycle/cleanup";
-import type { StateManager } from "../state";
+import type { State } from "../state";
 import type { Child, Elementish, Props } from "../types";
 import { SVG_NS, SVG_TAGS } from "../utils/constants";
 import { appendChildSmart } from "./children";
@@ -23,7 +23,7 @@ export function h(tag: unknown, props: Props, ...children: Child[]): Node {
 
     // Registrar função de rastreamento global
     const originalTracker = (globalThis as any).__SLASH_TRACK_STATE__;
-    (globalThis as any).__SLASH_TRACK_STATE__ = (state: StateManager<any>) => {
+    (globalThis as any).__SLASH_TRACK_STATE__ = (state: State<any>) => {
       tracker = trackState(tracker, state);
     };
 

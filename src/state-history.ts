@@ -5,7 +5,6 @@
  */
 
 import type { StateCommand } from './state-core'
-import type { State } from './state'
 
 /**
  * Entrada no histórico de comandos
@@ -13,7 +12,7 @@ import type { State } from './state'
 export interface HistoryEntry<S> {
   timestamp: number
   command: StateCommand<S>
-  resultingState: State<S>
+  resultingState: S
 }
 
 /**
@@ -30,7 +29,7 @@ export interface StateHistory<S> {
 export function addToHistory<S>(
   history: StateHistory<S>,
   command: StateCommand<S>,
-  resultingState: State<S>
+  resultingState: S
 ): StateHistory<S> {
   const entry: HistoryEntry<S> = {
     timestamp: Date.now(),
@@ -71,7 +70,7 @@ export function getCommands<S>(history: StateHistory<S>): ReadonlyArray<StateCom
 /**
  * PURE: Obtém estados resultantes do histórico
  */
-export function getStates<S>(history: StateHistory<S>): ReadonlyArray<State<S>> {
+export function getStates<S>(history: StateHistory<S>): ReadonlyArray<S> {
   return history.entries.map(entry => entry.resultingState)
 }
 
