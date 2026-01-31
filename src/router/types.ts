@@ -2,7 +2,7 @@
  * Router types for the Slash framework
  */
 
-import type { StateManager } from "../state"
+import type { State } from "../state"
 
 /**
  * Route parameters extracted from dynamic segments
@@ -123,7 +123,7 @@ export interface RouterConfig {
 /**
  * Router instance
  */
-export interface RouterInstance extends StateManager<RouterState> {
+export interface RouterInstance extends State<RouterState> {
   /** Navigate to a path */
   push(path: string): Promise<void>
   /** Replace current path */

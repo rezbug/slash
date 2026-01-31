@@ -1,5 +1,6 @@
 // packages/slash/src/forms/form.helpers.ts
-import type { Reactive, State } from "../types";
+import type { Reactive } from "../types";
+import type { State } from "../state";
 import type {
   ButtonEvent,
   CheckboxElement,

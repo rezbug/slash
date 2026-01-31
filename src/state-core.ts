@@ -5,14 +5,12 @@
  * sem realizar side effects. Todo o código aqui é facilmente testável sem mocks.
  */
 
-import type { State } from './state'
-
 /**
  * Comando que representa uma decisão sobre atualização de estado
  */
 export type StateCommand<S> =
   | { type: 'NO_CHANGE' }
-  | { type: 'UPDATE', oldState: State<S>, newState: State<S> }
+  | { type: 'UPDATE', oldState: S, newState: S }
 
 /**
  * Clone profundo que preserva instâncias especiais (Error, Date, etc)
@@ -158,8 +156,8 @@ export function __clearDeepEqualCache(): void {
  * @returns Comando indicando se deve atualizar ou não
  */
 export function computeStateUpdate<S>(
-  currentState: State<S>,
-  newPayload: State<S>
+  currentState: S,
+  newPayload: S
 ): StateCommand<S> {
   // Clonar o payload para garantir imutabilidade
   const newState = deepClone(newPayload);
@@ -187,9 +185,9 @@ export function computeStateUpdate<S>(
  * @returns Novo estado (ou mesmo estado se NO_CHANGE)
  */
 export function applyStateCommand<S>(
-  currentState: State<S>,
+  currentState: S,
   command: StateCommand<S>
-): State<S> {
+): S {
   if (command.type === 'NO_CHANGE') {
     return currentState;
   }
