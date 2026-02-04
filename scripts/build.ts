@@ -1,6 +1,7 @@
 // scripts/build.ts
 import { resolve } from 'node:path';
 import { rename, readFile, writeFile } from 'node:fs/promises';
+import { writeFileSync, unlinkSync } from 'node:fs';
 
 const isDev = process.env.NODE_ENV !== 'production';
 const format = process.env.FORMAT || 'esm';
@@ -10,15 +11,41 @@ type BuildConfig = Parameters<typeof Bun.build>[0];
 
 const ROOT = resolve(import.meta.dir, '..');
 
+// Criar entry points temporários para router e forms na raiz para evitar '../' nos imports
+const tempRouterPath = resolve(ROOT, 'src/_router.ts');
+const tempFormsPath = resolve(ROOT, 'src/_forms.ts');
+
+if (!watch) {
+  writeFileSync(tempRouterPath, 'export * from "./router/index";\n');
+  writeFileSync(tempFormsPath, 'export * from "./forms/index";\n');
+}
+
+// Entrypoints para code splitting
+const entrypoints = [
+  resolve(ROOT, 'src/index.ts'),    // Full bundle
+  resolve(ROOT, 'src/core.ts'),     // Core minimal
+  resolve(ROOT, 'src/ssr.ts'),      // SSR only
+  watch ? resolve(ROOT, 'src/router/index.ts') : tempRouterPath,  // Router only
+  watch ? resolve(ROOT, 'src/forms/index.ts') : tempFormsPath,    // Forms only
+];
+
 const config: BuildConfig = {
-  entrypoints: [resolve(ROOT, 'src/index.ts')],
+  entrypoints,
   outdir: resolve(ROOT, 'dist'),
   format: format as 'esm' | 'cjs',
   sourcemap: isDev ? 'inline' : 'external',
-  minify: !isDev,
-  naming: isDev ? undefined : '[dir]/[name].[ext]',
+  minify: !isDev ? {
+    whitespace: true,
+    syntax: true,
+    identifiers: true,
+  } : false,
+  naming: isDev ? '[dir]/[name].[ext]' : '[dir]/[name].[ext]',
   target: 'browser',
-  splitting: false, // Desabilitado - causava exports duplicados com chunks
+  splitting: true, // Habilitado para compartilhar código comum entre chunks
+  drop: isDev ? [] : ['console', 'debugger'],
+  define: {
+    'process.env.NODE_ENV': isDev ? '"development"' : '"production"',
+  },
 };
 
 if (watch) {
@@ -59,18 +86,33 @@ if (!isDev && result.outputs.length > 0) {
   for (const output of result.outputs) {
     const oldPath = output.path;
     if (oldPath.endsWith('.js')) {
-      const newPath = oldPath.replace(/\.js$/, `.${ext}`);
+      // Determinar o nome correto baseado no arquivo de entrada
+      let newPath = oldPath.replace(/\.js$/, `.${ext}`);
+
+      // Renomear arquivos temporários _router/_forms para router/forms
+      if (oldPath.includes('/_router.')) {
+        newPath = newPath.replace('/_router', '/router');
+      } else if (oldPath.includes('/_forms.')) {
+        newPath = newPath.replace('/_forms', '/forms');
+      }
+
       await rename(oldPath, newPath);
 
       // Ler o conteúdo e atualizar imports de .js para .mjs/.cjs
       let content = await readFile(newPath, 'utf-8');
 
       // Atualizar imports relativos de .js para a extensão correta
+      // Precisa capturar tanto import/export quanto import()
       content = content.replace(/from\s*["']\.\/([^"']+)\.js["']/g, `from "./$1.${ext}"`);
+      content = content.replace(/from\s*["']\.\.\/([^"']+)\.js["']/g, `from "../$1.${ext}"`);
+      content = content.replace(/import\s*["']\.\/([^"']+)\.js["']/g, `import "./$1.${ext}"`);
+      content = content.replace(/import\s*["']\.\.\/([^"']+)\.js["']/g, `import "../$1.${ext}"`);
       content = content.replace(/import\s*\(\s*["']\.\/([^"']+)\.js["']\s*\)/g, `import("./$1.${ext}")`);
+      content = content.replace(/import\s*\(\s*["']\.\.\/([^"']+)\.js["']\s*\)/g, `import("../$1.${ext}")`);
 
       // Adicionar referência ao source map se não existir
-      const mapFileName = `index.${ext}.map`;
+      const fileName = newPath.split('/').pop() || 'index';
+      const mapFileName = `${fileName}.map`;
       const sourceMapComment = `\n//# sourceMappingURL=${mapFileName}\n`;
 
       if (!content.includes('sourceMappingURL=')) {
@@ -81,7 +123,15 @@ if (!isDev && result.outputs.length > 0) {
 
       console.log(`  ✓ ${newPath.replace(ROOT, '.')}`);
     } else if (oldPath.endsWith('.js.map')) {
-      const newPath = oldPath.replace(/\.js\.map$/, `.${ext}.map`);
+      let newPath = oldPath.replace(/\.js\.map$/, `.${ext}.map`);
+
+      // Renomear source maps temporários também
+      if (oldPath.includes('/_router.')) {
+        newPath = newPath.replace('/_router', '/router');
+      } else if (oldPath.includes('/_forms.')) {
+        newPath = newPath.replace('/_forms', '/forms');
+      }
+
       await rename(oldPath, newPath);
     }
   }
@@ -91,6 +141,16 @@ if (!isDev && result.outputs.length > 0) {
   }
 } else {
   console.warn('⚠️  Warning: No outputs generated!');
+}
+
+// Limpar arquivos temporários
+if (!watch) {
+  try {
+    unlinkSync(tempRouterPath);
+    unlinkSync(tempFormsPath);
+  } catch {
+    // Ignore cleanup errors
+  }
 }
 
 if (!watch) {

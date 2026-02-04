@@ -1,6 +1,6 @@
 {
   "name": "@ezbug/slash",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "htm + hyper + reactive signals (no VDOM) — tiny, fast, DX-first",
   "license": "MIT",
   "type": "module",
@@ -18,6 +18,34 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs",
       "default": "./dist/index.mjs"
+    },
+    "./core": {
+      "bun": "./src/core.ts",
+      "types": "./dist/types/core.d.ts",
+      "import": "./dist/core.mjs",
+      "require": "./dist/core.cjs",
+      "default": "./dist/core.mjs"
+    },
+    "./router": {
+      "bun": "./src/router/index.ts",
+      "types": "./dist/types/router/index.d.ts",
+      "import": "./dist/router.mjs",
+      "require": "./dist/router.cjs",
+      "default": "./dist/router.mjs"
+    },
+    "./ssr": {
+      "bun": "./src/ssr.ts",
+      "types": "./dist/types/ssr.d.ts",
+      "import": "./dist/ssr.mjs",
+      "require": "./dist/ssr.cjs",
+      "default": "./dist/ssr.mjs"
+    },
+    "./forms": {
+      "bun": "./src/forms/index.ts",
+      "types": "./dist/types/forms/index.d.ts",
+      "import": "./dist/forms.mjs",
+      "require": "./dist/forms.cjs",
+      "default": "./dist/forms.mjs"
     }
   },
   "scripts": {
@@ -25,12 +53,14 @@
     "build:types": "tsc -p ./tsconfig.json",
     "build:esm": "FORMAT=esm NODE_ENV=production bun run scripts/build.ts",
     "build:cjs": "FORMAT=cjs NODE_ENV=production bun run scripts/build.ts",
-    "build": "bun run clean && bun run build:esm && bun run build:cjs",
+    "build:compress": "bun run scripts/compress.ts",
+    "build": "bun run clean && bun run build:esm && bun run build:cjs && bun run build:compress",
     "dev:bundle": "FORMAT=esm NODE_ENV=development bun run scripts/build.ts --watch",
     "dev:types": "tsc -w -p ./tsconfig.json --preserveWatchOutput",
     "dev": "concurrently --kill-others --names \"types,bundle\" \"bun run dev:types\" \"bun run dev:bundle\"",
     "test": "bun test",
-    "test:watch": "bun test --watch"
+    "test:watch": "bun test --watch",
+    "test:bundle": "bun test scripts/bundle-size.test.ts"
   },
   "dependencies": {
     "htm": "^3.1.1"
